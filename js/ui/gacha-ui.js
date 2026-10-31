@@ -1,6 +1,7 @@
 
 import { gachaSystem } from "../systems/gacha.js";
 import { saveManager } from "../core/save-manager.js";
+import { audioSystem } from "../systems/audio-system.js";
 
 const RARITY_NAMES = {
     gypsy: "吉普賽",
@@ -45,6 +46,8 @@ class GachaUI {
         if (!result.success) {
             message.textContent = result.message;
             message.className = "gacha-message error";
+
+            audioSystem.playError();
             return;
         }
 
@@ -53,9 +56,23 @@ class GachaUI {
 
         message.className = "gacha-message success";
 
+        audioSystem.playPull();
+
         this.renderResults(result.results);
+
         resultsPanel.hidden = false;
         this.updatePity();
+
+        this.playRevealSequence(result.results);
+    }
+
+    playRevealSequence(results) {
+        results.forEach((stone, index) => {
+            // 每塊原石間隔揭曉，避免音效重疊。
+            setTimeout(() => {
+                audioSystem.playReveal(stone.rarity);
+            }, 450 + index * 650);
+        });
     }
 
     renderResults(results) {
