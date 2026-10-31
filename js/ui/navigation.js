@@ -1,8 +1,6 @@
 
-import { eventBus } from "../core/event-bus.js";
-
 const PAGE_NAMES = {
-    home: "礦石工坊",
+    home: "工坊",
     gacha: "抽取原石",
     cutting: "切割工作台",
     inventory: "原石背包",
@@ -22,12 +20,38 @@ class Navigation {
                 this.navigate(button.dataset.page);
             });
         });
+
+        this.navigate("home");
     }
 
     navigate(page) {
         if (!PAGE_NAMES[page]) return;
 
         this.currentPage = page;
+
+        const availablePages = ["home", "gacha", "settings"];
+
+        document.querySelectorAll(".page-section").forEach(section => {
+            section.hidden = true;
+        });
+
+        const targetPage = availablePages.includes(page)
+            ? page
+            : "placeholder";
+
+        const target = document.getElementById(`page-${targetPage}`);
+
+        if (target) {
+            target.hidden = false;
+        }
+
+        const placeholderTitle =
+            document.getElementById("placeholder-title");
+
+        if (targetPage === "placeholder" && placeholderTitle) {
+            placeholderTitle.textContent =
+                `${PAGE_NAMES[page]}：開發中`;
+        }
 
         document.querySelectorAll(".nav-item").forEach(button => {
             button.classList.toggle(
@@ -36,14 +60,10 @@ class Navigation {
             );
         });
 
-        eventBus.emit("navigation:changed", {
-            page,
-            title: PAGE_NAMES[page]
+        window.scrollTo({
+            top: 0,
+            behavior: "smooth"
         });
-
-        if (page !== "home") {
-            alert(`${PAGE_NAMES[page]}：功能將在後續階段加入。`);
-        }
     }
 }
 
