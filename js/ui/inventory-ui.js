@@ -21,12 +21,7 @@ function getElement(id) {
 
 function formatNumber(value, digits = 1) {
     const number = Number(value);
-
-    if (!Number.isFinite(number)) {
-        return "0";
-    }
-
-    return number.toFixed(digits);
+    return Number.isFinite(number) ? number.toFixed(digits) : "0";
 }
 
 function formatDate(value) {
@@ -74,13 +69,11 @@ class InventoryUI {
         getElement("inventory-list")?.addEventListener(
             "click",
             event => {
-                const card = event.target.closest(
-                    "[data-stone-id]"
-                );
+                const card = event.target.closest("[data-stone-id]");
 
-                if (!card) return;
-
-                this.showDetail(card.dataset.stoneId);
+                if (card) {
+                    this.showDetail(card.dataset.stoneId);
+                }
             }
         );
 
@@ -89,8 +82,10 @@ class InventoryUI {
             () => this.closeDetail()
         );
 
-        eventBus.on(
-            "inventory:changed",
+        eventBus.on("inventory:changed", () => this.render());
+
+        document.addEventListener(
+            "inventory:page-opened",
             () => this.render()
         );
 
@@ -136,12 +131,9 @@ class InventoryUI {
 
     renderList() {
         const container = getElement("inventory-list");
-
         if (!container) return;
 
-        const stones = inventorySystem.getSorted(
-            this.getFilters()
-        );
+        const stones = inventorySystem.getSorted(this.getFilters());
 
         const count = getElement("inventory-result-count");
 
@@ -163,18 +155,16 @@ class InventoryUI {
             title.textContent = "目前沒有符合條件的原石";
 
             const description = document.createElement("p");
-            description.textContent = "前往抽取原石，讓收藏室慢慢豐富起來。";
+            description.textContent =
+                "前往抽取原石，讓收藏室慢慢豐富起來。";
 
             empty.append(symbol, title, description);
             container.appendChild(empty);
-
             return;
         }
 
         for (const stone of stones) {
-            container.appendChild(
-                this.createStoneCard(stone)
-            );
+            container.appendChild(this.createStoneCard(stone));
         }
     }
 
@@ -197,15 +187,13 @@ class InventoryUI {
 
         const rarity = document.createElement("span");
         rarity.className = "inventory-card-rarity";
-        rarity.textContent =
-            RARITY_NAMES[stone.rarity] ?? "未知稀有度";
+        rarity.textContent = RARITY_NAMES[stone.rarity] ?? "未知稀有度";
 
         const title = document.createElement("strong");
-        title.textContent = `${rarity.textContent}原石`;
+        title.textContent = `${RARITY_NAMES[stone.rarity] ?? "未知"}原石`;
 
         const status = document.createElement("small");
-        status.textContent =
-            STATUS_NAMES[stone.status] ?? "狀態未知";
+        status.textContent = STATUS_NAMES[stone.status] ?? "狀態未知";
 
         const date = document.createElement("small");
         date.textContent = formatDate(stone.obtainedAt);
@@ -233,7 +221,6 @@ class InventoryUI {
         this.selectedStoneId = stoneId;
 
         const panel = getElement("inventory-detail");
-
         if (!panel) return;
 
         panel.hidden = false;
@@ -273,8 +260,7 @@ class InventoryUI {
 
             const empty = document.createElement("div");
             empty.className = "inventory-detail-empty";
-            empty.textContent =
-                "這塊原石沒有內部玉石資料。";
+            empty.textContent = "這塊原石沒有內部玉石資料。";
 
             container.appendChild(empty);
             return;
@@ -292,21 +278,20 @@ class InventoryUI {
         if (masses.length === 0) {
             const empty = document.createElement("div");
             empty.className = "inventory-detail-empty";
-            empty.textContent =
-                "目前沒有符合保留條件的玉石質量。";
+            empty.textContent = "目前沒有符合保留條件的玉石質量。";
 
             container.appendChild(empty);
             return;
         }
 
         for (const mass of masses) {
-            container.appendChild(
-                this.createJadeItem(mass)
-            );
+            container.appendChild(this.createJadeItem(mass));
         }
 
-        if (Array.isArray(jadeData.discardedMasses) &&
-            jadeData.discardedMasses.length > 0) {
+        if (
+            Array.isArray(jadeData.discardedMasses) &&
+            jadeData.discardedMasses.length > 0
+        ) {
             const note = document.createElement("div");
             note.className = "inventory-detail-empty";
             note.textContent =
@@ -327,8 +312,7 @@ class InventoryUI {
         name.textContent = mass.name ?? "未知玉石";
 
         const volume = document.createElement("span");
-        volume.textContent =
-            `${formatNumber(mass.volumePercent)}%`;
+        volume.textContent = `${formatNumber(mass.volumePercent)}%`;
 
         top.append(name, volume);
 
@@ -344,7 +328,6 @@ class InventoryUI {
         );
 
         fill.style.width = `${width}%`;
-
         bar.appendChild(fill);
 
         const note = document.createElement("div");
@@ -365,21 +348,18 @@ class InventoryUI {
     refreshSelectedStone() {
         if (!this.selectedStoneId) return;
 
-        const stone = inventorySystem.getById(
-            this.selectedStoneId
-        );
+        const stone = inventorySystem.getById(this.selectedStoneId);
 
         if (!stone) {
             this.closeDetail();
             return;
         }
 
-        this.showDetailWithoutScroll(stone);
+        this.updateDetailWithoutScroll(stone);
     }
 
-    showDetailWithoutScroll(stone) {
+    updateDetailWithoutScroll(stone) {
         const panel = getElement("inventory-detail");
-
         if (!panel) return;
 
         panel.hidden = false;
