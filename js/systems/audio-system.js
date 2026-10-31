@@ -1,57 +1,88 @@
+
 class AudioSystem {
     constructor() {
         this.context = null;
         this.enabled = true;
         this.volume = 0.35;
+        this.unlocking = null;
     }
 
-    unlock() {
-        if (!this.enabled) return;
+    async unlock() {
+        if (!this.enabled) return false;
 
-        const AudioContext =
+        const AudioContextClass =
             window.AudioContext || window.webkitAudioContext;
 
-        if (!AudioContext) return;
-
-        if (!this.context) {
-            this.context = new AudioContext();
+        if (!AudioContextClass) {
+            console.warn("目前瀏覽器不支援 Web Audio API。");
+            return false;
         }
 
-        if (this.context.state === "suspended") {
-            this.context.resume();
+        try {
+            if (!this.context) {
+                this.context = new AudioContextClass();
+            }
+
+            if (this.context.state === "suspended") {
+                if (!this.unlocking) {
+                    this.unlocking = this.context.resume().finally(() => {
+                        this.unlocking = null;
+                    });
+                }
+
+                await this.unlocking;
+            }
+
+            return this.context.state === "running";
+        } catch (error) {
+            console.error("音訊啟動失敗：", error);
+            return false;
         }
     }
 
-    playTone(frequency, duration, type = "sine", volume = 1) {
+    async playTone(
+        frequency,
+        duration,
+        type = "sine",
+        volume = 1,
+        delay = 0
+    ) {
         if (!this.enabled) return;
 
-        this.unlock();
+        const ready = await this.unlock();
 
-        if (!this.context) return;
+        if (!ready || !this.context) return;
 
-        const oscillator = this.context.createOscillator();
-        const gain = this.context.createGain();
+        try {
+            const oscillator = this.context.createOscillator();
+            const gain = this.context.createGain();
 
-        const now = this.context.currentTime;
+            const startTime = this.context.currentTime + delay;
 
-        oscillator.type = type;
-        oscillator.frequency.setValueAtTime(frequency, now);
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(
+                frequency,
+                startTime
+            );
 
-        gain.gain.setValueAtTime(
-            Math.max(0.0001, this.volume * volume),
-            now
-        );
+            gain.gain.setValueAtTime(
+                Math.max(0.0001, this.volume * volume),
+                startTime
+            );
 
-        gain.gain.exponentialRampToValueAtTime(
-            0.0001,
-            now + duration
-        );
+            gain.gain.exponentialRampToValueAtTime(
+                0.0001,
+                startTime + duration
+            );
 
-        oscillator.connect(gain);
-        gain.connect(this.context.destination);
+            oscillator.connect(gain);
+            gain.connect(this.context.destination);
 
-        oscillator.start(now);
-        oscillator.stop(now + duration);
+            oscillator.start(startTime);
+            oscillator.stop(startTime + duration);
+        } catch (error) {
+            console.error("音效播放失敗：", error);
+        }
     }
 
     playClick() {
@@ -60,10 +91,7 @@ class AudioSystem {
 
     playPull() {
         this.playTone(280, 0.18, "triangle", 0.6);
-
-        setTimeout(() => {
-            this.playTone(420, 0.2, "triangle", 0.5);
-        }, 100);
+        this.playTone(420, 0.2, "triangle", 0.5, 0.1);
     }
 
     playReveal(rarity) {
@@ -78,22 +106,25 @@ class AudioSystem {
         const notes = melodies[rarity] ?? melodies.common;
 
         notes.forEach((frequency, index) => {
-            setTimeout(() => {
-                this.playTone(
-                    frequency,
-                    0.35,
-                    "sine",
-                    rarity === "legendary" ? 0.8 : 0.55
-                );
-            }, index * 120);
+            this.playTone(
+                frequency,
+                0.35,
+                "sine",
+                rarity === "legendary" ? 0.8 : 0.55,
+                index * 0.12
+            );
         });
     }
 
     playSuccess() {
         [523, 659, 784].forEach((frequency, index) => {
-            setTimeout(() => {
-                this.playTone(frequency, 0.2, "sine", 0.6);
-            }, index * 100);
+            this.playTone(
+                frequency,
+                0.2,
+                "sine",
+                0.6,
+                index * 0.1
+            );
         });
     }
 
@@ -101,12 +132,19 @@ class AudioSystem {
         this.playTone(180, 0.2, "triangle", 0.5);
     }
 
+    playTest() {
+        this.playSuccess();
+    }
+
     setEnabled(enabled) {
         this.enabled = Boolean(enabled);
     }
 
     setVolume(volume) {
-        this.volume = Math.min(1, Math.max(0, Number(volume) || 0));
+        this.volume = Math.min(
+            1,
+            Math.max(0, Number(volume) || 0)
+        );
     }
 }
 
