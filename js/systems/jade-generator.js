@@ -5,6 +5,10 @@ import {
     JADE_RARITY_LEVEL
 } from "../config/jade-config.js";
 
+import {
+    jadeGeometryGenerator
+} from "./jade-geometry-generator.js";
+
 function randomBetween(min, max) {
     return min + Math.random() * (max - min);
 }
@@ -68,12 +72,12 @@ function hasGuaranteedJade(draws, guaranteedTier) {
     const requiredLevel = JADE_RARITY_LEVEL[guaranteedTier];
 
     return draws.some(jade => {
-        // 37 玉是特殊種類，不計入一般稀有度保底。
         if (jade.id === "jade_37") {
             return false;
         }
 
-        const currentLevel = JADE_RARITY_LEVEL[jade.rarity] ?? 0;
+        const currentLevel =
+            JADE_RARITY_LEVEL[jade.rarity] ?? 0;
 
         return currentLevel >= requiredLevel;
     });
@@ -114,7 +118,6 @@ function allocateVolumes(draws, totalVolume) {
         return [];
     }
 
-    // 相同種類合併，保留重複抽取次數。
     const grouped = new Map();
 
     for (const jade of draws) {
@@ -132,7 +135,6 @@ function allocateVolumes(draws, totalVolume) {
 
     const groups = [...grouped.values()];
 
-    // 抽中次數越多，分配到的體積權重越高。
     const weights = groups.map(
         group => group.drawCount * randomBetween(0.7, 1.3)
     );
@@ -146,14 +148,23 @@ function allocateVolumes(draws, totalVolume) {
         const volume =
             totalVolume * weights[index] / totalWeight;
 
+        const id = createId();
+
+        const geometry = jadeGeometryGenerator.generate(
+            group.id,
+            group.rarity,
+            id
+        );
+
         return {
-            id: createId(),
+            id,
             jadeType: group.id,
             name: group.name,
             rarity: group.rarity,
             baseIndex: group.baseIndex,
             drawCount: group.drawCount,
-            volumePercent: volume
+            volumePercent: volume,
+            geometry
         };
     });
 }
@@ -210,8 +221,6 @@ class JadeGenerator {
                 config.guaranteedTier
             );
 
-            // 只有最後一次判定，而且前面沒有達成保底時，
-            // 才強制抽取一般指定稀有度以上的玉石。
             const shouldGuarantee =
                 isFinalDraw &&
                 config.guaranteedTier &&
@@ -269,9 +278,10 @@ class JadeGenerator {
 
             discardedVolume: fragmentResult.discardedVolume,
 
-            generationVersion: 2
+            generationVersion: 3
         };
     }
 }
 
 export const jadeGenerator = new JadeGenerator();
+
