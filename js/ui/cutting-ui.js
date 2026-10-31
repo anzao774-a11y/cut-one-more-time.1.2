@@ -1,4 +1,3 @@
-
 import * as THREE from "three";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
@@ -10,6 +9,7 @@ import {
     testIrregularStone,
     testCube
 } from "../systems/cutting-test-data.js?version=2";
+
 
 class CuttingUI {
     constructor() {
@@ -24,7 +24,12 @@ class CuttingUI {
         this.resultGroup = null;
         this.previewGroup = null;
 
-        this.currentMesh = structuredClone(testIrregularStone);
+        this.currentMesh = null;
+        this.currentStoneId = null;
+        this.currentStone = null;
+
+        this.isTestMode = false;
+
         this.currentResult = null;
         this.currentView = "original";
 
@@ -41,6 +46,11 @@ class CuttingUI {
         this.elements = {};
     }
 
+
+    // ==========================================
+    // 初始化
+    // ==========================================
+
     init() {
         if (this.initialized) return;
 
@@ -53,13 +63,12 @@ class CuttingUI {
 
         this.initialized = true;
 
+        this.createStoneSelector();
         this.createScene();
         this.createMaterials();
         this.bindEvents();
 
-        this.loadOriginalStone();
-        this.updateCutPreview();
-        this.updatePositionLabel();
+        this.refreshStoneSelector();
 
         this.resizeObserver = new ResizeObserver(() => {
             this.resize();
@@ -71,6 +80,7 @@ class CuttingUI {
 
         console.log("3D 切割工作台初始化完成");
     }
+
 
     cacheElements() {
         const mapping = {
@@ -85,11 +95,13 @@ class CuttingUI {
             resetButton: "reset-cut-button",
             message: "cutting-message",
             results: "cutting-results",
+
             originalVolume: "cut-original-volume",
             positiveVolume: "cut-positive-volume",
             negativeVolume: "cut-negative-volume",
             removedVolume: "cut-removed-volume",
             volumeDifference: "cut-volume-difference",
+
             viewOriginal: "cut-view-original",
             viewResults: "cut-view-results",
             testCube: "cut-test-cube"
@@ -100,11 +112,255 @@ class CuttingUI {
         }
     }
 
+
+    // ==========================================
+    // 原石選擇器
+    // ==========================================
+
+    createStoneSelector() {
+        const viewer = this.elements.viewer;
+
+        if (!viewer) return;
+
+        const wrapper = document.createElement("div");
+
+        wrapper.id = "cutting-stone-selector";
+
+        wrapper.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            padding: 14px;
+            border: 1px solid rgba(198,164,92,0.22);
+            border-radius: 10px;
+            background: rgba(30,34,28,0.95);
+        `;
+
+        const label = document.createElement("label");
+
+        label.textContent = "選擇待切割原石";
+        label.style.cssText = `
+            color: #d5c59a;
+            font-size: 13px;
+            font-weight: 600;
+        `;
+
+        label.htmlFor = "cutting-stone-select";
+
+        const select = document.createElement("select");
+
+        select.id = "cutting-stone-select";
+
+        select.style.cssText = `
+            flex: 1;
+            min-width: 180px;
+            min-height: 40px;
+            padding: 0 12px;
+            border: 1px solid rgba(198,164,92,0.3);
+            border-radius: 7px;
+            background: #292d26;
+            color: #eee6d2;
+            font: inherit;
+        `;
+
+        const info = document.createElement("span");
+
+        info.id = "cutting-stone-info";
+
+        info.style.cssText = `
+            width: 100%;
+            color: #aaa58f;
+            font-size: 11px;
+            line-height: 1.6;
+        `;
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(select);
+        wrapper.appendChild(info);
+
+        viewer.parentElement.insertBefore(wrapper, viewer);
+
+        this.elements.stoneSelect = select;
+        this.elements.stoneInfo = info;
+    }
+
+
+    refreshStoneSelector() {
+        const select = this.elements.stoneSelect;
+
+        if (!select) return;
+
+        const previousId = this.currentStoneId;
+
+        const stones = inventorySystem.getUncut();
+
+        select.innerHTML = "";
+
+        const placeholder = document.createElement("option");
+
+        placeholder.value = "";
+        placeholder.textContent = "請選擇背包中的原石";
+
+        select.appendChild(placeholder);
+
+        for (const stone of stones) {
+            const option = document.createElement("option");
+
+            option.value = stone.id;
+
+            const rarityName =
+                stone.rarityName ??
+                stone.rarity ??
+                "未知稀有度";
+
+            const stoneName =
+                stone.name ??
+                "未命名原石";
+
+            option.textContent =
+                `${rarityName}｜${stoneName}`;
+
+            select.appendChild(option);
+        }
+
+        if (
+            previousId &&
+            stones.some(stone => stone.id === previousId)
+        ) {
+            select.value = previousId;
+        } else {
+            select.value = "";
+        }
+
+        if (stones.length === 0) {
+            this.updateStoneInfo(
+                "目前沒有尚未切割的背包原石。可以使用測試素材進行測試。"
+            );
+        } else {
+            this.updateStoneInfo(
+                `目前有 ${stones.length} 塊尚未切割的原石。`
+            );
+        }
+    }
+
+
+    updateStoneInfo(message) {
+        if (this.elements.stoneInfo) {
+            this.elements.stoneInfo.textContent = message;
+        }
+    }
+
+
+    getStoneGeometry(stone) {
+        if (!stone || !stone.geometry) {
+            return null;
+        }
+
+        const geometry = stone.geometry;
+
+        if (
+            !Array.isArray(geometry.vertices) ||
+            !Array.isArray(geometry.faces)
+        ) {
+            return null;
+        }
+
+        return {
+            vertices: structuredClone(geometry.vertices),
+            faces: structuredClone(geometry.faces)
+        };
+    }
+
+
+    selectInventoryStone(stoneId) {
+        if (!stoneId) return false;
+
+        const stone = inventorySystem.getById(stoneId);
+
+        if (!stone) {
+            this.showMessage(
+                "找不到指定原石，請重新整理選單。",
+                true
+            );
+
+            return false;
+        }
+
+        if (stone.status !== "uncut") {
+            this.showMessage(
+                "此原石已經切割，無法再次使用。",
+                true
+            );
+
+            return false;
+        }
+
+        const geometry = this.getStoneGeometry(stone);
+
+        if (!geometry) {
+            this.showMessage(
+                "此原石缺少有效的 3D 幾何資料，暫時無法切割。",
+                true
+            );
+
+            return false;
+        }
+
+        this.currentStone = stone;
+        this.currentStoneId = stone.id;
+
+        this.currentMesh = geometry;
+
+        this.isTestMode = false;
+
+        this.currentResult = null;
+        this.savedCurrentResult = false;
+
+        if (this.elements.results) {
+            this.elements.results.hidden = true;
+        }
+
+        if (this.elements.cutButton) {
+            this.elements.cutButton.disabled = false;
+        }
+
+        this.loadOriginalStone();
+
+        const rarityName =
+            stone.rarityName ??
+            stone.rarity ??
+            "未知稀有度";
+
+        this.showMessage(
+            `已載入 ${rarityName} 原石，可以開始調整切割參數。`
+        );
+
+        this.updateStoneInfo(
+            `目前選擇：${stone.name ?? "未命名原石"}｜${rarityName}`
+        );
+
+        return true;
+    }
+
+
+    // ==========================================
+    // Three.js 場景
+    // ==========================================
+
     createScene() {
         this.scene = new THREE.Scene();
+
         this.scene.background = new THREE.Color("#20231e");
 
-        this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+        this.camera = new THREE.PerspectiveCamera(
+            45,
+            1,
+            0.1,
+            100
+        );
+
         this.camera.position.set(4.5, 3.5, 5);
 
         this.renderer = new THREE.WebGLRenderer({
@@ -117,10 +373,15 @@ class CuttingUI {
         );
 
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        this.elements.viewer.appendChild(this.renderer.domElement);
+        this.renderer.shadowMap.enabled = true;
+
+        this.renderer.shadowMap.type =
+            THREE.PCFSoftShadowMap;
+
+        this.elements.viewer.appendChild(
+            this.renderer.domElement
+        );
 
         this.controls = new OrbitControls(
             this.camera,
@@ -129,27 +390,54 @@ class CuttingUI {
 
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.06;
+
         this.controls.minDistance = 2.5;
         this.controls.maxDistance = 12;
+
         this.controls.target.set(0, 0, 0);
 
-        this.scene.add(new THREE.AmbientLight(0xffffff, 1.7));
+        this.scene.add(
+            new THREE.AmbientLight(0xffffff, 1.7)
+        );
 
-        const keyLight = new THREE.DirectionalLight(0xffe2a1, 3);
+        const keyLight = new THREE.DirectionalLight(
+            0xffe2a1,
+            3
+        );
+
         keyLight.position.set(4, 6, 5);
         keyLight.castShadow = true;
+
         this.scene.add(keyLight);
 
-        const fillLight = new THREE.DirectionalLight(0x8da58a, 1.4);
+        const fillLight = new THREE.DirectionalLight(
+            0x8da58a,
+            1.4
+        );
+
         fillLight.position.set(-5, 2, -3);
+
         this.scene.add(fillLight);
 
-        const rimLight = new THREE.PointLight(0xc6a45c, 20, 12);
+        const rimLight = new THREE.PointLight(
+            0xc6a45c,
+            20,
+            12
+        );
+
         rimLight.position.set(0, 3, -4);
+
         this.scene.add(rimLight);
 
-        const grid = new THREE.GridHelper(8, 16, 0x6b694e, 0x353a30);
+        const grid = new THREE.GridHelper(
+            8,
+            16,
+            0x6b694e,
+            0x353a30
+        );
+
         grid.position.y = -1.55;
+
         this.scene.add(grid);
 
         const floor = new THREE.Mesh(
@@ -163,49 +451,73 @@ class CuttingUI {
         floor.rotation.x = -Math.PI / 2;
         floor.position.y = -1.58;
         floor.receiveShadow = true;
+
         this.scene.add(floor);
 
         this.resize();
     }
 
+
     createMaterials() {
-        this.materials.original = new THREE.MeshStandardMaterial({
-            color: 0x777b68,
-            roughness: 0.78,
-            metalness: 0.05,
-            flatShading: true
-        });
+        this.materials.original =
+            new THREE.MeshStandardMaterial({
+                color: 0x777b68,
+                roughness: 0.78,
+                metalness: 0.05,
+                flatShading: true
+            });
 
-        this.materials.positive = new THREE.MeshStandardMaterial({
-            color: 0x879b72,
-            roughness: 0.68,
-            metalness: 0.06,
-            flatShading: true
-        });
+        this.materials.positive =
+            new THREE.MeshStandardMaterial({
+                color: 0x879b72,
+                roughness: 0.68,
+                metalness: 0.06,
+                flatShading: true
+            });
 
-        this.materials.negative = new THREE.MeshStandardMaterial({
-            color: 0xb59a61,
-            roughness: 0.65,
-            metalness: 0.08,
-            flatShading: true
-        });
+        this.materials.negative =
+            new THREE.MeshStandardMaterial({
+                color: 0xb59a61,
+                roughness: 0.65,
+                metalness: 0.08,
+                flatShading: true
+            });
 
-        this.materials.preview = new THREE.MeshBasicMaterial({
-            color: 0xd5b56c,
-            transparent: true,
-            opacity: 0.2,
-            side: THREE.DoubleSide,
-            depthWrite: false
-        });
+        this.materials.preview =
+            new THREE.MeshBasicMaterial({
+                color: 0xd5b56c,
+                transparent: true,
+                opacity: 0.2,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
     }
 
+
     meshToGeometry(meshData) {
+        if (
+            !meshData ||
+            !Array.isArray(meshData.vertices) ||
+            !Array.isArray(meshData.faces)
+        ) {
+            throw new Error("原石幾何資料格式錯誤");
+        }
+
         const positions = [];
 
         for (const face of meshData.faces) {
             for (const index of face) {
                 const vertex = meshData.vertices[index];
-                positions.push(vertex[0], vertex[1], vertex[2]);
+
+                if (!vertex || vertex.length !== 3) {
+                    throw new Error("原石頂點資料無效");
+                }
+
+                positions.push(
+                    vertex[0],
+                    vertex[1],
+                    vertex[2]
+                );
             }
         }
 
@@ -213,7 +525,10 @@ class CuttingUI {
 
         geometry.setAttribute(
             "position",
-            new THREE.Float32BufferAttribute(positions, 3)
+            new THREE.Float32BufferAttribute(
+                positions,
+                3
+            )
         );
 
         geometry.computeVertexNormals();
@@ -221,6 +536,7 @@ class CuttingUI {
 
         return geometry;
     }
+
 
     createStoneMesh(meshData, material) {
         const stone = new THREE.Mesh(
@@ -234,8 +550,9 @@ class CuttingUI {
         return stone;
     }
 
+
     clearGroup(group) {
-        if (!group) return;
+        if (!group || !this.scene) return;
 
         this.scene.remove(group);
 
@@ -246,12 +563,15 @@ class CuttingUI {
         });
     }
 
+
     clearPreview() {
         if (!this.previewGroup) return;
 
         this.clearGroup(this.previewGroup);
+
         this.previewGroup = null;
     }
+
 
     loadOriginalStone() {
         this.clearGroup(this.originalGroup);
@@ -273,28 +593,54 @@ class CuttingUI {
         this.currentView = "original";
 
         this.resetCamera();
+
         this.updateViewButtons();
         this.updateCutPreview();
     }
 
+
     resetCamera() {
+        if (!this.camera || !this.controls) return;
+
         this.camera.position.set(4.5, 3.5, 5);
+
         this.controls.target.set(0, 0, 0);
+
         this.controls.update();
     }
 
+
+    // ==========================================
+    // 切割平面
+    // ==========================================
+
     getPlaneNormal() {
-        if (this.axis === "x") return [1, 0, 0];
-        if (this.axis === "y") return [0, 1, 0];
+        if (this.axis === "x") {
+            return [1, 0, 0];
+        }
+
+        if (this.axis === "y") {
+            return [0, 1, 0];
+        }
+
         return [0, 0, 1];
     }
+
 
     getCutPlane() {
         const point = [0, 0, 0];
 
-        if (this.axis === "x") point[0] = this.cutPosition;
-        if (this.axis === "y") point[1] = this.cutPosition;
-        if (this.axis === "z") point[2] = this.cutPosition;
+        if (this.axis === "x") {
+            point[0] = this.cutPosition;
+        }
+
+        if (this.axis === "y") {
+            point[1] = this.cutPosition;
+        }
+
+        if (this.axis === "z") {
+            point[2] = this.cutPosition;
+        }
 
         return {
             point,
@@ -302,12 +648,19 @@ class CuttingUI {
         };
     }
 
+
     updateCutPreview() {
         this.clearPreview();
 
-        if (this.currentView !== "original") return;
+        if (
+            this.currentView !== "original" ||
+            !this.currentMesh
+        ) {
+            return;
+        }
 
         const plane = this.getCutPlane();
+
         const helper = new THREE.Group();
 
         const planeMesh = new THREE.Mesh(
@@ -330,64 +683,140 @@ class CuttingUI {
         helper.add(planeMesh);
 
         this.previewGroup = helper;
+
         this.scene.add(helper);
     }
 
+
+    // ==========================================
+    // 事件
+    // ==========================================
+
     bindEvents() {
-        this.elements.axis.addEventListener("change", event => {
-            this.axis = event.target.value;
-            this.updatePositionLabel();
-            this.updateCutPreview();
-        });
+        const bind = (element, eventName, callback) => {
+            if (!element) return;
 
-        this.elements.position.addEventListener("input", event => {
-            this.cutPosition = Number(event.target.value);
+            element.addEventListener(
+                eventName,
+                callback
+            );
+        };
 
-            this.elements.positionValue.textContent =
-                this.cutPosition.toFixed(2);
 
-            this.updateCutPreview();
-        });
+        bind(
+            this.elements.stoneSelect,
+            "change",
+            event => {
+                const stoneId = event.target.value;
 
-        this.elements.thickness.addEventListener("input", event => {
-            this.bladeThickness = Number(event.target.value);
+                if (stoneId) {
+                    this.selectInventoryStone(stoneId);
+                }
+            }
+        );
 
-            this.elements.thicknessValue.textContent =
-                this.bladeThickness.toFixed(3);
-        });
 
-        this.elements.cutButton.addEventListener("click", () => {
-            this.performCut();
-        });
+        bind(
+            this.elements.axis,
+            "change",
+            event => {
+                this.axis = event.target.value;
 
-        this.elements.resetButton.addEventListener("click", () => {
-            this.resetWorkbench();
-        });
+                this.updatePositionLabel();
+                this.updateCutPreview();
+            }
+        );
 
-        this.elements.viewOriginal.addEventListener("click", () => {
-            this.showOriginal();
-        });
 
-        this.elements.viewResults.addEventListener("click", () => {
-            this.showResults();
-        });
+        bind(
+            this.elements.position,
+            "input",
+            event => {
+                this.cutPosition = Number(
+                    event.target.value
+                );
 
-        this.elements.testCube.addEventListener("click", () => {
-            this.currentMesh = structuredClone(testCube);
-            this.currentResult = null;
-            this.savedCurrentResult = false;
+                if (this.elements.positionValue) {
+                    this.elements.positionValue.textContent =
+                        this.cutPosition.toFixed(2);
+                }
 
-            this.elements.results.hidden = true;
-            this.elements.cutButton.disabled = false;
+                this.updateCutPreview();
+            }
+        );
 
-            this.loadOriginalStone();
-            this.showMessage("已載入標準立方體測試素材。");
-        });
 
-        document.addEventListener("cutting:page-opened", () => {
-            requestAnimationFrame(() => this.resize());
-        });
+        bind(
+            this.elements.thickness,
+            "input",
+            event => {
+                this.bladeThickness = Number(
+                    event.target.value
+                );
+
+                if (this.elements.thicknessValue) {
+                    this.elements.thicknessValue.textContent =
+                        this.bladeThickness.toFixed(3);
+                }
+            }
+        );
+
+
+        bind(
+            this.elements.cutButton,
+            "click",
+            () => {
+                this.performCut();
+            }
+        );
+
+
+        bind(
+            this.elements.resetButton,
+            "click",
+            () => {
+                this.resetWorkbench();
+            }
+        );
+
+
+        bind(
+            this.elements.viewOriginal,
+            "click",
+            () => {
+                this.showOriginal();
+            }
+        );
+
+
+        bind(
+            this.elements.viewResults,
+            "click",
+            () => {
+                this.showResults();
+            }
+        );
+
+
+        bind(
+            this.elements.testCube,
+            "click",
+            () => {
+                this.loadTestStone();
+            }
+        );
+
+
+        document.addEventListener(
+            "cutting:page-opened",
+            () => {
+                requestAnimationFrame(() => {
+                    this.resize();
+                });
+            }
+        );
     }
+
 
     updatePositionLabel() {
         const labels = {
@@ -396,23 +825,88 @@ class CuttingUI {
             z: "Z 軸切割位置"
         };
 
-        this.elements.positionLabel.textContent = labels[this.axis];
+        if (this.elements.positionLabel) {
+            this.elements.positionLabel.textContent =
+                labels[this.axis];
+        }
+
         this.updateCutPreview();
     }
 
-    createInventoryRecord(mesh, side, result) {
+
+    // ==========================================
+    // 測試素材
+    // ==========================================
+
+    loadTestStone(mesh = testCube, name = "標準立方體") {
+        this.currentMesh = structuredClone(mesh);
+
+        this.currentStone = null;
+        this.currentStoneId = null;
+
+        this.isTestMode = true;
+
+        this.currentResult = null;
+        this.savedCurrentResult = false;
+
+        if (this.elements.stoneSelect) {
+            this.elements.stoneSelect.value = "";
+        }
+
+        if (this.elements.results) {
+            this.elements.results.hidden = true;
+        }
+
+        if (this.elements.cutButton) {
+            this.elements.cutButton.disabled = false;
+        }
+
+        this.loadOriginalStone();
+
+        this.showMessage(
+            `目前使用測試素材：${name}。此模式不會修改背包。`
+        );
+
+        this.updateStoneInfo(
+            `測試模式：${name}，切割結果不會加入背包。`
+        );
+    }
+
+
+    // ==========================================
+    // 切割結果紀錄
+    // ==========================================
+
+    createInventoryRecord(mesh, side, result, sourceStone) {
         const now = Date.now();
 
+        const sideName =
+            side === "positive"
+                ? "正側"
+                : "負側";
+
         return {
-            id: `cut-${now}-${side}-${Math.random().toString(36).slice(2, 8)}`,
+            id:
+                `cut-${now}-${side}-` +
+                Math.random().toString(36).slice(2, 8),
 
-            name: side === "positive"
-                ? "切割原石（正側）"
-                : "切割原石（負側）",
+            name:
+                `${sourceStone.name ?? "原石"}（${sideName}）`,
 
-            rarity: "common",
+            rarity: sourceStone.rarity ?? "common",
+
+            rarityName:
+                sourceStone.rarityName ??
+                sourceStone.rarity ??
+                "常見",
+
             status: "cut",
+
             obtainedAt: now,
+
+            sourceStoneId: sourceStone.id,
+
+            cutSide: side,
 
             geometry: {
                 vertices: structuredClone(mesh.vertices),
@@ -424,66 +918,153 @@ class CuttingUI {
 
                 originalVolume: result.originalVolume,
 
-                pieceVolume: side === "positive"
-                    ? result.positiveVolume
-                    : result.negativeVolume,
+                pieceVolume:
+                    side === "positive"
+                        ? result.positiveVolume
+                        : result.negativeVolume,
 
                 removedVolume: result.removedVolume,
+
                 bladeThickness: result.bladeThickness,
-                cutPlane: structuredClone(result.cutPlane)
+
+                cutPlane: structuredClone(
+                    result.cutPlane
+                )
             },
 
+            // 目前只分割原石外部幾何，
+            // 尚未真正分割內部玉石。
             jadeData: null
         };
     }
 
+
     saveCutPieces(result) {
+        if (this.isTestMode) {
+            return [];
+        }
+
         if (this.savedCurrentResult) {
             throw new Error(
-                "本次切割結果已經加入背包，請重設工作台後再切割。"
+                "本次切割結果已經加入背包，請選擇其他原石。"
+            );
+        }
+
+        if (!this.currentStoneId) {
+            throw new Error(
+                "沒有指定來源原石，無法儲存切割結果。"
             );
         }
 
         const saveData = saveManager.getData();
 
-        if (!saveData || !Array.isArray(saveData.inventory)) {
+        if (
+            !saveData ||
+            !Array.isArray(saveData.inventory)
+        ) {
             throw new Error(
-                "無法取得背包存檔資料，請檢查 saveManager。"
+                "無法取得背包存檔資料。"
             );
         }
 
-        const originalInventory = [...saveData.inventory];
+        const originalStone = saveData.inventory.find(
+            stone => stone.id === this.currentStoneId
+        );
+
+        if (!originalStone) {
+            throw new Error(
+                "來源原石已不存在，請重新整理工作台。"
+            );
+        }
+
+        if (originalStone.status !== "uncut") {
+            throw new Error(
+                "來源原石已經切割，不能重複操作。"
+            );
+        }
+
+        const originalStatus = originalStone.status;
+        const originalCutAt = originalStone.cutAt;
+
+        const originalInventory = [
+            ...saveData.inventory
+        ];
 
         const positiveRecord = this.createInventoryRecord(
             result.positivePiece,
             "positive",
-            result
+            result,
+            originalStone
         );
 
         const negativeRecord = this.createInventoryRecord(
             result.negativePiece,
             "negative",
-            result
+            result,
+            originalStone
         );
 
+
+        // 將原始原石標記為已切割。
+        originalStone.status = "cut";
+        originalStone.cutAt = Date.now();
+
+        // 保留來源資訊，方便日後追蹤。
+        originalStone.cutResultIds = [
+            positiveRecord.id,
+            negativeRecord.id
+        ];
+
+        // 加入兩塊切割結果。
         saveData.inventory.push(
             positiveRecord,
             negativeRecord
         );
 
+
+        // 更新切割統計。
+        if (!saveData.statistics) {
+            saveData.statistics = {
+                totalPulls: 0,
+                totalCuts: 0
+            };
+        }
+
+        const originalTotalCuts =
+            saveData.statistics.totalCuts ?? 0;
+
+        saveData.statistics.totalCuts =
+            originalTotalCuts + 1;
+
+
         const saved = saveManager.save();
 
         if (!saved) {
+            // 存檔失敗時，回復原本背包。
             saveData.inventory = originalInventory;
 
+            originalStone.status = originalStatus;
+
+            if (originalCutAt === undefined) {
+                delete originalStone.cutAt;
+            } else {
+                originalStone.cutAt = originalCutAt;
+            }
+
+            saveData.statistics.totalCuts =
+                originalTotalCuts;
+
             throw new Error(
-                "存檔失敗，切割結果沒有加入背包。"
+                "存檔失敗，已回復原本背包資料。"
             );
         }
 
-        inventorySystem.notifyChanged();
 
         this.savedCurrentResult = true;
+
+        inventorySystem.notifyChanged();
+
+        this.refreshStoneSelector();
 
         return [
             positiveRecord,
@@ -491,15 +1072,49 @@ class CuttingUI {
         ];
     }
 
+
+    // ==========================================
+    // 執行切割
+    // ==========================================
+
     performCut() {
-        if (this.savedCurrentResult) {
+        if (!this.currentMesh) {
             this.showMessage(
-                "本次切割已經存入背包，請重設工作台後再進行下一次切割。",
+                "目前沒有載入原石。",
                 true
             );
 
             return;
         }
+
+        if (this.savedCurrentResult) {
+            this.showMessage(
+                "本次切割已經完成，請選擇其他原石。",
+                true
+            );
+
+            return;
+        }
+
+
+        // 真正背包原石必須重新確認狀態。
+        if (!this.isTestMode) {
+            const latestStone = inventorySystem.getById(
+                this.currentStoneId
+            );
+
+            if (!latestStone || latestStone.status !== "uncut") {
+                this.showMessage(
+                    "來源原石已不存在或已經切割，請重新選擇。",
+                    true
+                );
+
+                this.refreshStoneSelector();
+
+                return;
+            }
+        }
+
 
         try {
             cuttingSystem.setBladeThickness(
@@ -514,15 +1129,27 @@ class CuttingUI {
             this.currentResult = result;
 
             this.displayResults(result);
-            this.elements.results.hidden = false;
+
+            if (this.elements.results) {
+                this.elements.results.hidden = false;
+            }
 
             const savedRecords = this.saveCutPieces(result);
 
-            this.elements.cutButton.disabled = true;
 
-            this.showMessage(
-                `切割完成！正側與負側兩塊原石已加入背包，目前新增 ${savedRecords.length} 筆紀錄。`
-            );
+            if (this.isTestMode) {
+                this.showMessage(
+                    "測試切割完成！本次結果沒有加入背包。"
+                );
+            } else {
+                if (this.elements.cutButton) {
+                    this.elements.cutButton.disabled = true;
+                }
+
+                this.showMessage(
+                    `切割完成！原石已標記為已切割，正側與負側兩塊已加入背包。新增 ${savedRecords.length} 筆紀錄。`
+                );
+            }
 
         } catch (error) {
             console.error(
@@ -537,12 +1164,19 @@ class CuttingUI {
         }
     }
 
+
+    // ==========================================
+    // 顯示切割結果
+    // ==========================================
+
     displayResults(result) {
         this.clearGroup(this.originalGroup);
         this.clearGroup(this.resultGroup);
+
         this.clearPreview();
 
         this.originalGroup = null;
+
         this.resultGroup = new THREE.Group();
 
         const positive = this.createStoneMesh(
@@ -565,17 +1199,27 @@ class CuttingUI {
 
         this.scene.add(this.resultGroup);
 
-        this.elements.originalVolume.textContent =
-            result.originalVolume.toFixed(4);
 
-        this.elements.positiveVolume.textContent =
-            result.positiveVolume.toFixed(4);
+        if (this.elements.originalVolume) {
+            this.elements.originalVolume.textContent =
+                result.originalVolume.toFixed(4);
+        }
 
-        this.elements.negativeVolume.textContent =
-            result.negativeVolume.toFixed(4);
+        if (this.elements.positiveVolume) {
+            this.elements.positiveVolume.textContent =
+                result.positiveVolume.toFixed(4);
+        }
 
-        this.elements.removedVolume.textContent =
-            result.removedVolume.toFixed(4);
+        if (this.elements.negativeVolume) {
+            this.elements.negativeVolume.textContent =
+                result.negativeVolume.toFixed(4);
+        }
+
+        if (this.elements.removedVolume) {
+            this.elements.removedVolume.textContent =
+                result.removedVolume.toFixed(4);
+        }
+
 
         const total =
             result.positiveVolume +
@@ -586,21 +1230,34 @@ class CuttingUI {
             result.originalVolume - total
         );
 
-        this.elements.volumeDifference.textContent =
-            difference.toFixed(8);
+        if (this.elements.volumeDifference) {
+            this.elements.volumeDifference.textContent =
+                difference.toFixed(8);
+        }
+
 
         this.currentView = "results";
 
         this.resetCamera();
+
         this.updateViewButtons();
     }
 
+
+    // ==========================================
+    // 檢視切換
+    // ==========================================
+
     showOriginal() {
+        if (!this.currentMesh) return;
+
         this.clearGroup(this.resultGroup);
         this.clearGroup(this.originalGroup);
+
         this.clearPreview();
 
         this.resultGroup = null;
+
         this.originalGroup = new THREE.Group();
 
         this.originalGroup.add(
@@ -615,14 +1272,20 @@ class CuttingUI {
         this.currentView = "original";
 
         this.resetCamera();
+
         this.updateCutPreview();
+
         this.updateViewButtons();
     }
 
+
     showResults() {
-        if (!this.currentResult || !this.resultGroup) return;
+        if (!this.currentResult || !this.resultGroup) {
+            return;
+        }
 
         this.clearGroup(this.originalGroup);
+
         this.clearPreview();
 
         this.originalGroup = null;
@@ -632,25 +1295,38 @@ class CuttingUI {
         this.currentView = "results";
 
         this.resetCamera();
+
         this.updateViewButtons();
     }
 
+
     updateViewButtons() {
-        this.elements.viewOriginal.classList.toggle(
-            "active",
-            this.currentView === "original"
-        );
+        if (this.elements.viewOriginal) {
+            this.elements.viewOriginal.classList.toggle(
+                "active",
+                this.currentView === "original"
+            );
+        }
 
-        this.elements.viewResults.classList.toggle(
-            "active",
-            this.currentView === "results"
-        );
+        if (this.elements.viewResults) {
+            this.elements.viewResults.classList.toggle(
+                "active",
+                this.currentView === "results"
+            );
 
-        this.elements.viewResults.disabled =
-            !this.currentResult;
+            this.elements.viewResults.disabled =
+                !this.currentResult;
+        }
     }
 
+
+    // ==========================================
+    // 訊息
+    // ==========================================
+
     showMessage(message, isError = false) {
+        if (!this.elements.message) return;
+
         this.elements.message.textContent = message;
 
         this.elements.message.classList.toggle(
@@ -659,60 +1335,184 @@ class CuttingUI {
         );
     }
 
+
+    // ==========================================
+    // 重設工作台
+    // ==========================================
+
     resetWorkbench() {
-        this.currentMesh = structuredClone(testIrregularStone);
         this.currentResult = null;
+
         this.savedCurrentResult = false;
 
         this.axis = "x";
         this.cutPosition = 0;
         this.bladeThickness = 0.025;
 
-        this.elements.axis.value = "x";
-        this.elements.position.value = "0";
-        this.elements.positionValue.textContent = "0.00";
 
-        this.elements.thickness.value = "0.025";
-        this.elements.thicknessValue.textContent = "0.025";
+        if (this.elements.axis) {
+            this.elements.axis.value = "x";
+        }
 
-        this.elements.results.hidden = true;
-        this.elements.cutButton.disabled = false;
+        if (this.elements.position) {
+            this.elements.position.value = "0";
+        }
+
+        if (this.elements.positionValue) {
+            this.elements.positionValue.textContent = "0.00";
+        }
+
+        if (this.elements.thickness) {
+            this.elements.thickness.value = "0.025";
+        }
+
+        if (this.elements.thicknessValue) {
+            this.elements.thicknessValue.textContent = "0.025";
+        }
+
+        if (this.elements.results) {
+            this.elements.results.hidden = true;
+        }
+
+        if (this.elements.cutButton) {
+            this.elements.cutButton.disabled = false;
+        }
+
 
         cuttingSystem.setBladeThickness(0.025);
 
-        this.loadOriginalStone();
-        this.updatePositionLabel();
+        this.refreshStoneSelector();
+
+
+        // 優先選擇下一塊未切割的背包原石。
+        const stones = inventorySystem.getUncut();
+
+        if (stones.length > 0) {
+            const nextStone = stones[0];
+
+            const loaded = this.selectInventoryStone(
+                nextStone.id
+            );
+
+            if (loaded) {
+                this.showMessage(
+                    "工作台已重設，已載入下一塊未切割原石。"
+                );
+
+                return;
+            }
+        }
+
+
+        // 沒有背包原石時，改用測試素材。
+        this.loadTestStone(
+            testIrregularStone,
+            "不規則原石測試素材"
+        );
 
         this.showMessage(
-            "工作台已重設，已恢復預設原石。"
+            "工作台已重設，目前沒有可切割的背包原石，已載入測試素材。"
         );
     }
 
+
+    // ==========================================
+    // 畫面尺寸
+    // ==========================================
+
     resize() {
-        if (!this.renderer || !this.camera) return;
+        if (!this.renderer || !this.camera) {
+            return;
+        }
 
-        const width = this.elements.viewer.clientWidth;
-        const height = this.elements.viewer.clientHeight;
+        const width =
+            this.elements.viewer.clientWidth;
 
-        if (width <= 0 || height <= 0) return;
+        const height =
+            this.elements.viewer.clientHeight;
+
+        if (width <= 0 || height <= 0) {
+            return;
+        }
 
         this.camera.aspect = width / height;
+
         this.camera.updateProjectionMatrix();
 
         this.renderer.setSize(width, height);
     }
 
-    animate() {
-        this.animationFrame = requestAnimationFrame(() => {
-            this.animate();
-        });
 
-        this.controls.update();
-        this.renderer.render(
-            this.scene,
-            this.camera
+    // ==========================================
+    // 動畫
+    // ==========================================
+
+    animate() {
+        this.animationFrame = requestAnimationFrame(
+            () => {
+                this.animate();
+            }
         );
+
+        if (this.controls) {
+            this.controls.update();
+        }
+
+        if (this.renderer && this.scene && this.camera) {
+            this.renderer.render(
+                this.scene,
+                this.camera
+            );
+        }
+    }
+
+
+    // ==========================================
+    // 清理
+    // ==========================================
+
+    dispose() {
+        if (this.animationFrame !== null) {
+            cancelAnimationFrame(this.animationFrame);
+
+            this.animationFrame = null;
+        }
+
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+
+            this.resizeObserver = null;
+        }
+
+        this.clearGroup(this.originalGroup);
+        this.clearGroup(this.resultGroup);
+        this.clearPreview();
+
+        if (this.controls) {
+            this.controls.dispose();
+
+            this.controls = null;
+        }
+
+        if (this.renderer) {
+            this.renderer.dispose();
+
+            this.renderer.domElement.remove();
+
+            this.renderer = null;
+        }
+
+        for (const material of Object.values(this.materials)) {
+            if (material && material.dispose) {
+                material.dispose();
+            }
+        }
+
+        this.materials = {};
+
+        this.initialized = false;
     }
 }
+
 
 export const cuttingUI = new CuttingUI();
