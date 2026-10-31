@@ -1,8 +1,19 @@
 
+// js/systems/gacha.js
+
 import { GAME_CONFIG } from "../config/game-config.js";
 import { saveManager } from "../core/save-manager.js";
 import { eventBus } from "../core/event-bus.js";
 import { jadeGenerator } from "./jade-generator.js";
+
+import {
+    stoneGeometryGenerator
+} from "./stone-geometry-generator.js";
+
+
+// =====================================
+// 稀有度設定
+// =====================================
 
 const RARITIES = [
     { id: "gypsy", name: "吉普賽", weight: 55, level: 1 },
@@ -12,6 +23,11 @@ const RARITIES = [
     { id: "legendary", name: "傳說", weight: 0.5, level: 5 }
 ];
 
+
+// =====================================
+// ID 與種子
+// =====================================
+
 function createId() {
     if (globalThis.crypto?.randomUUID) {
         return globalThis.crypto.randomUUID();
@@ -19,6 +35,21 @@ function createId() {
 
     return `stone-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
+
+function createSeed() {
+    if (globalThis.crypto?.getRandomValues) {
+        const values = new Uint32Array(1);
+        globalThis.crypto.getRandomValues(values);
+        return values[0];
+    }
+
+    return Math.floor(Math.random() * 4294967296);
+}
+
+
+// =====================================
+// 保底資料
+// =====================================
 
 function getPity(data) {
     if (!data.gachaPity) {
@@ -30,6 +61,11 @@ function getPity(data) {
 
     return data.gachaPity;
 }
+
+
+// =====================================
+// 抽卡機率
+// =====================================
 
 function weightedRarity() {
     const roll = Math.random() * 100;
@@ -70,13 +106,49 @@ function pickRarity(pity, forceEpic = false) {
     return weightedRarity();
 }
 
+
+// =====================================
+// 建立原石
+// =====================================
+
 function createStone(rarity) {
+    const id = createId();
+
+    // 每塊原石都擁有自己的固定種子。
+    const shapeSeed = createSeed();
+    const textureSeed = createSeed();
+
+    // 抽卡時立即生成原石幾何。
+    const generatedGeometry =
+        stoneGeometryGenerator.generate(
+            rarity.id,
+            shapeSeed
+        );
+
     const stone = {
-        id: createId(),
+        id,
+
         rarity: rarity.id,
         rarityName: rarity.name,
+        level: rarity.level,
+
         obtainedAt: new Date().toISOString(),
-        status: "uncut"
+
+        status: "uncut",
+
+        // 原石外觀生成資訊。
+        appearance: {
+            shapeSeed,
+            textureSeed,
+            generatorVersion: 1
+        },
+
+        // 原石三維模型。
+        geometry: {
+            vertices: generatedGeometry.vertices,
+            faces: generatedGeometry.faces,
+            metadata: generatedGeometry.metadata
+        }
     };
 
     // 抽到原石時，立即生成內部玉石資料。
@@ -84,6 +156,11 @@ function createStone(rarity) {
 
     return stone;
 }
+
+
+// =====================================
+// 抽卡系統
+// =====================================
 
 class GachaSystem {
     pull(count) {
@@ -126,10 +203,12 @@ class GachaSystem {
                 index === 9 &&
                 !hasEpicOrHigher;
 
-            const rarity = pickRarity(pity, forceEpic);
+            const rarity = pickRarity(
+                pity,
+                forceEpic
+            );
 
             const stone = createStone(rarity);
-            stone.level = rarity.level;
 
             results.push(stone);
 
@@ -155,9 +234,11 @@ class GachaSystem {
             }
         }
 
+        // 存入背包。
         data.inventory ??= [];
         data.inventory.push(...results);
 
+        // 儲存失敗時還原整份存檔。
         if (!saveManager.save()) {
             saveManager.data = snapshot;
 
@@ -167,8 +248,13 @@ class GachaSystem {
             };
         }
 
+        // 通知其他介面更新。
         eventBus.emit("gold:changed", data.gold);
-        eventBus.emit("inventory:changed", data.inventory);
+
+        eventBus.emit(
+            "inventory:changed",
+            data.inventory
+        );
 
         return {
             success: true,
