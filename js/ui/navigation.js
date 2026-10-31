@@ -12,6 +12,7 @@ const PAGE_NAMES = {
 const AVAILABLE_PAGES = [
     "home",
     "gacha",
+    "cutting",
     "inventory",
     "settings"
 ];
@@ -36,12 +37,10 @@ class Navigation {
 
         this.currentPage = page;
 
-        // 隱藏所有頁面
         document.querySelectorAll(".page-section").forEach(section => {
             section.hidden = true;
         });
 
-        // 已完成的頁面直接顯示，其他頁面使用開發中畫面
         const targetPage = AVAILABLE_PAGES.includes(page)
             ? page
             : "placeholder";
@@ -52,7 +51,6 @@ class Navigation {
             target.hidden = false;
         }
 
-        // 更新尚未開放頁面的標題
         const placeholderTitle =
             document.getElementById("placeholder-title");
 
@@ -61,7 +59,6 @@ class Navigation {
                 `${PAGE_NAMES[page]}：開發中`;
         }
 
-        // 更新底部導覽列與其他導覽按鈕狀態
         document.querySelectorAll(".nav-item").forEach(button => {
             button.classList.toggle(
                 "active",
@@ -69,11 +66,18 @@ class Navigation {
             );
         });
 
-        // 進入背包時刷新資料
         if (page === "inventory") {
             document.dispatchEvent(
                 new CustomEvent("inventory:page-opened")
             );
+        }
+
+        if (page === "cutting") {
+            requestAnimationFrame(() => {
+                document.dispatchEvent(
+                    new CustomEvent("cutting:page-opened")
+                );
+            });
         }
 
         window.scrollTo({
