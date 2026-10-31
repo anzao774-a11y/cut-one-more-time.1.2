@@ -1,0 +1,147 @@
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#171916">
+    <meta name="description" content="再切一刀就好：哪有賭徒天天輸">
+    <title>再切一刀就好</title>
+
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/mobile.css">
+</head>
+
+<body>
+    <div class="game-shell">
+
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-mark">切</div>
+                <div>
+                    <h1>再切一刀就好</h1>
+                    <p>哪有賭徒天天輸</p>
+                </div>
+            </div>
+
+            <div class="player-info">
+                <div class="gold-display">
+                    <span class="gold-icon">G</span>
+                    <span id="gold-balance">10,000</span>
+                </div>
+                <button class="icon-button" data-page="settings"
+                    aria-label="設定">⚙</button>
+            </div>
+        </header>
+
+        <main class="main-content">
+
+            <section class="welcome-section">
+                <div class="eyebrow">THE GEMSTONE WORKSHOP</div>
+                <h2>歡迎回到你的礦石工坊</h2>
+                <p>每一塊原石，都藏著尚未揭曉的秘密。</p>
+            </section>
+
+            <section class="workshop-panel">
+                <div class="workshop-heading">
+                    <div>
+                        <span class="section-label">WORKSHOP</span>
+                        <h2>今日的原石</h2>
+                    </div>
+                    <span class="status-indicator">工坊營業中</span>
+                </div>
+
+                <div class="stone-display">
+                    <div class="stone-glow"></div>
+                    <div class="stone-placeholder">
+                        <span>◆</span>
+                        <p>等待下一塊原石</p>
+                    </div>
+                    <div class="stone-caption">
+                        <span>UNIDENTIFIED STONE</span>
+                        <span>尚未鑑定</span>
+                    </div>
+                </div>
+
+                <div class="workshop-actions">
+                    <button class="primary-button" data-page="gacha">
+                        <span>✦</span>
+                        前往抽取原石
+                    </button>
+
+                    <button class="secondary-button" data-page="cutting">
+                        前往切割工作台
+                    </button>
+                </div>
+            </section>
+
+            <section class="quick-access">
+                <div class="section-heading">
+                    <div>
+                        <span class="section-label">QUICK ACCESS</span>
+                        <h2>工坊管理</h2>
+                    </div>
+                </div>
+
+                <div class="access-grid">
+                    <button class="access-card" data-page="inventory">
+                        <span class="access-icon">▤</span>
+                        <strong>原石背包</strong>
+                        <small>管理你的收藏</small>
+                    </button>
+
+                    <button class="access-card" data-page="dex">
+                        <span class="access-icon">◇</span>
+                        <strong>玉石圖鑑</strong>
+                        <small>探索珍稀品種</small>
+                    </button>
+
+                    <button class="access-card" data-page="market">
+                        <span class="access-icon">⌂</span>
+                        <strong>交易市場</strong>
+                        <small>鑑定與出售</small>
+                    </button>
+
+                    <button class="access-card" data-page="settings">
+                        <span class="access-icon">⚙</span>
+                        <strong>工坊設定</strong>
+                        <small>管理遊戲選項</small>
+                    </button>
+                </div>
+            </section>
+
+        </main>
+
+        <footer class="bottom-nav">
+            <button class="nav-item active" data-page="home">
+                <span>⌂</span>
+                <small>工坊</small>
+            </button>
+
+            <button class="nav-item" data-page="gacha">
+                <span>✦</span>
+                <small>抽原石</small>
+            </button>
+
+            <button class="nav-item" data-page="cutting">
+                <span>⚒</span>
+                <small>切割</small>
+            </button>
+
+            <button class="nav-item" data-page="inventory">
+                <span>▤</span>
+                <small>背包</small>
+            </button>
+
+            <button class="nav-item" data-page="dex">
+                <span>◇</span>
+                <small>圖鑑</small>
+            </button>
+        </footer>
+
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
