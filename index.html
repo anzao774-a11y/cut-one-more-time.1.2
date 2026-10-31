@@ -13,6 +13,15 @@
     <link rel="stylesheet" href="css/mobile.css">
     <link rel="stylesheet" href="css/gacha.css">
     <link rel="stylesheet" href="css/inventory.css">
+    <link rel="stylesheet" href="css/cutting.css">
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
 </head>
 
 <body>
@@ -167,6 +176,127 @@
             </section>
         </section>
 
+        <!-- 切割工作台 -->
+        <section id="page-cutting" class="page-section cutting-page" hidden>
+            <div class="page-title cutting-heading">
+                <span class="section-label">GEMSTONE CUTTING WORKBENCH</span>
+                <h2>原石切割工作台</h2>
+                <p>調整切割位置與刀片厚度，揭開原石的形狀。</p>
+            </div>
+
+            <div class="cutting-workbench">
+                <section class="cutting-view-panel">
+                    <div class="cutting-view-heading">
+                        <h3>3D 原石檢視</h3>
+                        <span class="cutting-view-hint">拖曳旋轉・縮放檢視</span>
+                    </div>
+
+                    <div id="cutting-viewer" class="cutting-viewer"></div>
+
+                    <div class="cutting-view-tools">
+                        <button id="cut-view-original"
+                            class="cutting-view-button active"
+                            type="button">原始原石</button>
+
+                        <button id="cut-view-results"
+                            class="cutting-view-button"
+                            type="button"
+                            disabled>切割結果</button>
+
+                        <button id="cut-test-cube"
+                            class="cutting-view-button"
+                            type="button">載入立方體測試</button>
+                    </div>
+                </section>
+
+                <section class="cutting-control-panel">
+                    <div class="cutting-panel-heading">
+                        <h3>切割參數</h3>
+                        <span class="section-label">CUT SETTINGS</span>
+                    </div>
+
+                    <div class="cutting-control-group">
+                        <label for="cut-axis">切割方向</label>
+                        <select id="cut-axis">
+                            <option value="x">X 軸方向</option>
+                            <option value="y">Y 軸方向</option>
+                            <option value="z">Z 軸方向</option>
+                        </select>
+                        <span class="cutting-control-note">
+                            選擇切割平面的法線方向。
+                        </span>
+                    </div>
+
+                    <div class="cutting-control-group">
+                        <label for="cut-position">
+                            <span id="cut-position-label">X 軸切割位置</span>
+                            <strong id="cut-position-value">0.00</strong>
+                        </label>
+                        <input id="cut-position" type="range"
+                            min="-0.9" max="0.9" step="0.01" value="0">
+                        <span class="cutting-control-note">
+                            拖曳滑桿調整切割平面的位置。
+                        </span>
+                    </div>
+
+                    <div class="cutting-control-group">
+                        <label for="blade-thickness">
+                            刀片厚度
+                            <strong id="blade-thickness-value">0.025</strong>
+                        </label>
+                        <input id="blade-thickness" type="range"
+                            min="0" max="0.15" step="0.005" value="0.025">
+                        <span class="cutting-control-note">
+                            刀片厚度會影響切割耗損量。
+                        </span>
+                    </div>
+
+                    <div class="cutting-actions">
+                        <button id="cut-button" class="primary-button"
+                            type="button">⚒ 執行切割</button>
+                        <button id="reset-cut-button" class="secondary-button"
+                            type="button">重設工作台</button>
+                    </div>
+
+                    <div id="cutting-message"
+                        class="cutting-message" role="status">
+                        原石已載入，可以調整切割位置。
+                    </div>
+                </section>
+            </div>
+
+            <section id="cutting-results" class="cutting-result-panel" hidden>
+                <div class="cutting-result-heading">
+                    <h3>切割結果分析</h3>
+                    <span class="section-label">CUTTING REPORT</span>
+                </div>
+
+                <div class="cutting-result-grid">
+                    <div class="cutting-result-card">
+                        <span>原始體積</span>
+                        <strong id="cut-original-volume">0</strong>
+                    </div>
+                    <div class="cutting-result-card positive">
+                        <span>正側保留體積</span>
+                        <strong id="cut-positive-volume">0</strong>
+                    </div>
+                    <div class="cutting-result-card negative">
+                        <span>負側保留體積</span>
+                        <strong id="cut-negative-volume">0</strong>
+                    </div>
+                    <div class="cutting-result-card removed">
+                        <span>切割耗損體積</span>
+                        <strong id="cut-removed-volume">0</strong>
+                    </div>
+                </div>
+
+                <div class="cutting-conservation">
+                    體積守恆誤差：
+                    <strong id="cut-volume-difference">0</strong>
+                </div>
+            </section>
+        </section>
+
         <!-- 原石背包 -->
         <section id="page-inventory" class="page-section" hidden>
             <div class="page-title">
@@ -180,12 +310,10 @@
                     <span>原石總數</span>
                     <strong id="inventory-total">0</strong>
                 </div>
-
                 <div class="inventory-stat">
                     <span>尚未切割</span>
                     <strong id="inventory-uncut">0</strong>
                 </div>
-
                 <div class="inventory-stat">
                     <span>已切割</span>
                     <strong id="inventory-cut">0</strong>
@@ -198,25 +326,21 @@
                     <span>吉普賽</span>
                     <strong id="inventory-gypsy">0</strong>
                 </div>
-
                 <div class="inventory-rarity-item">
                     <span class="rarity-dot common"></span>
                     <span>常見</span>
                     <strong id="inventory-common">0</strong>
                 </div>
-
                 <div class="inventory-rarity-item">
                     <span class="rarity-dot rare"></span>
                     <span>稀有</span>
                     <strong id="inventory-rare">0</strong>
                 </div>
-
                 <div class="inventory-rarity-item">
                     <span class="rarity-dot epic"></span>
                     <span>史詩</span>
                     <strong id="inventory-epic">0</strong>
                 </div>
-
                 <div class="inventory-rarity-item">
                     <span class="rarity-dot legendary"></span>
                     <span>傳說</span>
@@ -233,7 +357,6 @@
                         <option value="cut">已切割</option>
                     </select>
                 </div>
-
                 <div class="inventory-filter">
                     <label for="inventory-rarity">稀有度</label>
                     <select id="inventory-rarity">
@@ -245,7 +368,6 @@
                         <option value="legendary">傳說</option>
                     </select>
                 </div>
-
                 <div class="inventory-filter">
                     <label for="inventory-sort">排序方式</label>
                     <select id="inventory-sort">
@@ -269,13 +391,10 @@
                         <span class="section-label">STONE INSPECTION</span>
                         <h3 id="inventory-detail-title">原石資訊</h3>
                     </div>
-
-                    <button
-                        id="inventory-detail-close"
+                    <button id="inventory-detail-close"
                         class="inventory-close-button"
                         type="button"
-                        aria-label="關閉原石資訊"
-                    >✕</button>
+                        aria-label="關閉原石資訊">✕</button>
                 </div>
 
                 <div class="inventory-detail-meta">
@@ -297,7 +416,6 @@
                     <h4>內部玉石分布</h4>
                     <span id="detail-jade-volume">總量 0%</span>
                 </div>
-
                 <div id="inventory-jade-list" class="inventory-jade-list"></div>
             </section>
         </section>
@@ -313,21 +431,12 @@
             <div class="settings-panel">
                 <h3>特殊代碼</h3>
                 <p>輸入正確代碼即可領取額外金幣。</p>
-
                 <div class="cheat-input-row">
-                    <input
-                        id="cheat-code"
-                        type="text"
-                        maxlength="40"
-                        placeholder="輸入特殊代碼"
-                        autocomplete="off"
-                        spellcheck="false"
-                    >
-                    <button id="redeem-cheat" class="primary-button">
-                        兌換
-                    </button>
+                    <input id="cheat-code" type="text" maxlength="40"
+                        placeholder="輸入特殊代碼" autocomplete="off"
+                        spellcheck="false">
+                    <button id="redeem-cheat" class="primary-button">兌換</button>
                 </div>
-
                 <div id="cheat-message" class="cheat-message"
                     role="status"></div>
             </div>
