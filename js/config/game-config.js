@@ -22,8 +22,21 @@ export const GAME_CONFIG = {
     },
 
     cheat: {
-        code: "37bibobi",
-        reward: 10000
+        codes: {
+            girlfriend: {
+                code: "37bibobi",
+                reward: 10000
+            },
+
+            godmode: {
+                code: "GODMODE",
+                reward: 1000000
+            },
+
+            reset: {
+                code: "RESETALL"
+            }
+        }
     },
 
     scrapBuybackRate: 0.2,
