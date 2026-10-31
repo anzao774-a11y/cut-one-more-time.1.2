@@ -1,6 +1,6 @@
 // v2/js/systems/cutting-test.js
 
-import { geometryEngine } from "./geometry-engine.js";
+import { cuttingSystem } from "./cutting-system.js";
 
 import {
     TEST_STONE,
@@ -8,30 +8,26 @@ import {
 } from "./cutting-test-data.js";
 
 export function runCuttingTest() {
-    try {
-        const result = geometryEngine.split(
-            TEST_STONE,
-            TEST_CUT_PLANE
-        );
+    console.log("===== 原石切割測試開始 =====");
 
-        console.log("原石切割測試結果：", result);
+    const result = cuttingSystem.cut(
+        TEST_STONE,
+        TEST_CUT_PLANE
+    );
 
-        if (!result.success) {
-            console.error("切割失敗：", result.reason);
-            return result;
-        }
-
-        console.log("正面幾何：", result.positive);
-        console.log("反面幾何：", result.negative);
-        console.log("切割截面：", result.cutSurface);
-        console.log("切割統計：", result.statistics);
-
+    if (!result.success) {
+        console.error("切割測試失敗：", result.reason);
         return result;
-    } catch (error) {
-        console.error("幾何測試發生錯誤：", error);
-        return {
-            success: false,
-            reason: error.message
-        };
     }
+
+    console.log("切割成功！");
+    console.log("正面原石：", result.positive);
+    console.log("反面原石：", result.negative);
+    console.log("切割截面：", result.cutSurface);
+    console.log("切割平面：", result.plane);
+    console.log("切割統計：", result.statistics);
+
+    console.log("===== 原石切割測試結束 =====");
+
+    return result;
 }
