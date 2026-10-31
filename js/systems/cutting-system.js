@@ -1,5 +1,6 @@
+// js/systems/cutting-system.js
 
-import { geometryEngine } from "./geometry-engine.js?version=2";
+import { geometryEngine } from "./geometry-engine.js?version=3";
 
 class CuttingSystem {
     constructor() {
@@ -105,11 +106,13 @@ class CuttingSystem {
         const normal = geometryEngine.normalize(plane.normal);
         const half = this.config.bladeThickness / 2;
 
+        // 正側保留切割平面正方向的材料。
         const positivePlane = this.offsetPlane(
             { point: plane.point, normal },
             half
         );
 
+        // 負側保留切割平面負方向的材料。
         const negativePlane = this.offsetPlane(
             { point: plane.point, normal },
             -half
@@ -135,10 +138,14 @@ class CuttingSystem {
         const positiveVolume = this.calculateVolume(positivePiece);
         const negativeVolume = this.calculateVolume(negativePiece);
 
-        const removedVolume = Math.max(
-            0,
-            originalVolume - positiveVolume - negativeVolume
-        );
+        const removedVolume =
+            originalVolume - positiveVolume - negativeVolume;
+
+        if (removedVolume < -1e-6) {
+            throw new Error(
+                "切割後體積超過原始體積，請檢查模型封口或面方向"
+            );
+        }
 
         const result = {
             positivePiece,
@@ -146,7 +153,7 @@ class CuttingSystem {
             originalVolume,
             positiveVolume,
             negativeVolume,
-            removedVolume,
+            removedVolume: Math.max(0, removedVolume),
             bladeThickness: this.config.bladeThickness,
             cutPlane: {
                 point: [...plane.point],
