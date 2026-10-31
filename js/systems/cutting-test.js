@@ -1,13 +1,13 @@
-// js/systems/cutting-test.js
 
 import { cuttingSystem } from "./cutting-system.js";
+
 import {
     testCube,
     testCutPlane
 } from "./cutting-test-data.js";
 
 export function runCuttingTest() {
-    console.log("開始測試切割系統");
+    console.log("開始測試刀片厚度切割系統");
 
     try {
         const result = cuttingSystem.cutStone(
@@ -16,15 +16,32 @@ export function runCuttingTest() {
         );
 
         console.log("切割成功");
-        console.log("原始頂點數：", testCube.vertices.length);
-        console.log("原始面數：", testCube.faces.length);
-        console.log("切割後頂點數：", result.vertices.length);
-        console.log("切割後面數：", result.faces.length);
-        console.log("切割結果：", result);
+
+        console.log("刀片厚度：", result.bladeThickness);
+
+        console.log("原始體積：", result.originalVolume);
+
+        console.log("正側保留體積：", result.positiveVolume);
+
+        console.log("負側保留體積：", result.negativeVolume);
+
+        console.log("移除材料體積：", result.removedVolume);
+
+        console.log("正側頂點數：", result.positivePiece.vertices.length);
+
+        console.log("負側頂點數：", result.negativePiece.vertices.length);
+
+        console.log("正側面數：", result.positivePiece.faces.length);
+
+        console.log("負側面數：", result.negativePiece.faces.length);
+
+        console.log("完整切割結果：", result);
 
         return result;
+
     } catch (error) {
         console.error("切割測試失敗：", error);
+
         return null;
     }
 }
