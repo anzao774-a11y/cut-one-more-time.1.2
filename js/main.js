@@ -7,12 +7,27 @@ import { gachaUI } from "./ui/gacha-ui.js";
 import { settingsUI } from "./ui/settings-ui.js";
 import { inventoryUI } from "./ui/inventory-ui.js";
 
+import { audioSystem } from "./systems/audio-system.js";
+
 function updateGoldDisplay(gold) {
     const element = document.getElementById("gold-balance");
 
     if (element) {
         element.textContent = Number(gold).toLocaleString("en-US");
     }
+}
+
+// 等待玩家第一次操作後，解鎖瀏覽器音訊。
+function initializeAudio() {
+    const unlockAudio = () => {
+        audioSystem.unlock();
+
+        document.removeEventListener("pointerdown", unlockAudio);
+        document.removeEventListener("keydown", unlockAudio);
+    };
+
+    document.addEventListener("pointerdown", unlockAudio);
+    document.addEventListener("keydown", unlockAudio);
 }
 
 function initializeGame() {
@@ -39,12 +54,14 @@ function initializeGame() {
 
     eventBus.on("gold:changed", updateGoldDisplay);
 
+    initializeAudio();
+
     navigation.init();
     gachaUI.init();
     settingsUI.init();
     inventoryUI.init();
 
-    console.log("再切一刀就好：原石背包系統初始化完成");
+    console.log("再切一刀就好：遊戲與音效系統初始化完成");
 }
 
 initializeGame();
