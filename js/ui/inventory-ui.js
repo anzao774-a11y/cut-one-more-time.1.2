@@ -1,4 +1,7 @@
 
+import * as THREE from "three";
+import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+
 import { inventorySystem } from "../systems/inventory.js";
 import { eventBus } from "../core/event-bus.js";
 
@@ -13,6 +16,14 @@ const RARITY_NAMES = {
 const STATUS_NAMES = {
     uncut: "尚未切割",
     cut: "已切割"
+};
+
+const RARITY_COLORS = {
+    gypsy: 0xaaa18d,
+    common: 0x8fae79,
+    rare: 0x79a9d2,
+    epic: 0xbd8bd5,
+    legendary: 0xe3bd70
 };
 
 function getElement(id) {
@@ -44,6 +55,19 @@ class InventoryUI {
     constructor() {
         this.selectedStoneId = null;
         this.initialized = false;
+
+        this.preview = {
+            scene: null,
+            camera: null,
+            renderer: null,
+            controls: null,
+            mesh: null,
+            animationFrame: null,
+            resizeObserver: null,
+            container: null,
+            geometry: null,
+            material: null
+        };
     }
 
     init() {
@@ -238,11 +262,369 @@ class InventoryUI {
             formatDate(stone.obtainedAt);
 
         this.renderJadeData(stone.jadeData);
+        this.renderStonePreview(stone);
 
         panel.scrollIntoView({
             behavior: "smooth",
             block: "nearest"
         });
+    }
+
+    renderStonePreview(stone) {
+        const panel = getElement("inventory-detail");
+
+        if (!panel) return;
+
+        let section = getElement("inventory-stone-preview-section");
+
+        if (!section) {
+            section = document.createElement("section");
+            section.id = "inventory-stone-preview-section";
+            section.className = "inventory-stone-preview-section";
+
+            const heading = document.createElement("div");
+            heading.className = "inventory-preview-heading";
+
+            const title = document.createElement("h4");
+            title.textContent = "原石 3D 外觀";
+
+            const hint = document.createElement("span");
+            hint.textContent = "拖曳旋轉・滾輪縮放";
+
+            heading.append(title, hint);
+
+            const container = document.createElement("div");
+            container.id = "inventory-stone-preview";
+            container.className = "inventory-stone-preview";
+
+            section.append(heading, container);
+
+            const meta = panel.querySelector(".inventory-detail-meta");
+
+            if (meta) {
+                meta.after(section);
+            } else {
+                panel.prepend(section);
+            }
+        }
+
+        const container = getElement("inventory-stone-preview");
+
+        if (!container) return;
+
+        this.destroyPreview();
+
+        const geometryData = stone.geometry;
+
+        if (
+            !geometryData ||
+            !Array.isArray(geometryData.vertices) ||
+            !Array.isArray(geometryData.faces) ||
+            geometryData.vertices.length < 4 ||
+            geometryData.faces.length < 4
+        ) {
+            container.replaceChildren();
+
+            const message = document.createElement("div");
+            message.className = "inventory-preview-fallback";
+            message.textContent =
+                "這塊原石沒有 3D 幾何資料。可能是舊存檔中的原石。";
+
+            container.appendChild(message);
+            return;
+        }
+
+        this.createPreviewScene(container, stone);
+    }
+
+    createPreviewScene(container, stone) {
+        const preview = this.preview;
+
+        preview.container = container;
+
+        try {
+            preview.scene = new THREE.Scene();
+            preview.scene.background = new THREE.Color("#20231e");
+
+            preview.camera = new THREE.PerspectiveCamera(
+                42,
+                1,
+                0.1,
+                100
+            );
+
+            preview.camera.position.set(3.2, 2.4, 3.6);
+
+            preview.renderer = new THREE.WebGLRenderer({
+                antialias: true,
+                alpha: false
+            });
+
+            preview.renderer.setPixelRatio(
+                Math.min(window.devicePixelRatio || 1, 2)
+            );
+
+            preview.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+            container.replaceChildren(preview.renderer.domElement);
+
+            preview.controls = new OrbitControls(
+                preview.camera,
+                preview.renderer.domElement
+            );
+
+            preview.controls.enableDamping = true;
+            preview.controls.dampingFactor = 0.06;
+            preview.controls.enablePan = false;
+            preview.controls.minDistance = 1.8;
+            preview.controls.maxDistance = 8;
+            preview.controls.autoRotate = true;
+            preview.controls.autoRotateSpeed = 1.2;
+
+            preview.scene.add(
+                new THREE.AmbientLight(0xffffff, 1.8)
+            );
+
+            const keyLight = new THREE.DirectionalLight(
+                0xffe2b0,
+                3
+            );
+
+            keyLight.position.set(4, 5, 5);
+            preview.scene.add(keyLight);
+
+            const fillLight = new THREE.DirectionalLight(
+                0x9db7a0,
+                1.5
+            );
+
+            fillLight.position.set(-4, 1, -3);
+            preview.scene.add(fillLight);
+
+            const rimLight = new THREE.PointLight(
+                0xd5b56c,
+                16,
+                10
+            );
+
+            rimLight.position.set(0, 3, -3);
+            preview.scene.add(rimLight);
+
+            preview.geometry = this.createPreviewGeometry(
+                stone.geometry
+            );
+
+            const color =
+                RARITY_COLORS[stone.rarity] ?? 0xaaa18d;
+
+            preview.material = new THREE.MeshStandardMaterial({
+                color,
+                roughness: 0.48,
+                metalness: 0.08,
+                flatShading: true
+            });
+
+            preview.mesh = new THREE.Mesh(
+                preview.geometry,
+                preview.material
+            );
+
+            preview.mesh.castShadow = true;
+            preview.mesh.receiveShadow = true;
+
+            preview.scene.add(preview.mesh);
+
+            const grid = new THREE.GridHelper(
+                5,
+                10,
+                0x6b694e,
+                0x353a30
+            );
+
+            grid.position.y = -1.2;
+            preview.scene.add(grid);
+
+            preview.resizeObserver = new ResizeObserver(() => {
+                this.resizePreview();
+            });
+
+            preview.resizeObserver.observe(container);
+
+            this.resizePreview();
+
+            const animate = () => {
+                if (!preview.renderer) return;
+
+                preview.animationFrame =
+                    requestAnimationFrame(animate);
+
+                preview.controls?.update();
+
+                preview.renderer.render(
+                    preview.scene,
+                    preview.camera
+                );
+            };
+
+            animate();
+
+        } catch (error) {
+            console.error("原石 3D 預覽建立失敗：", error);
+
+            this.destroyPreview();
+
+            container.replaceChildren();
+
+            const message = document.createElement("div");
+            message.className = "inventory-preview-fallback";
+            message.textContent =
+                "3D 預覽暫時無法建立，請重新開啟原石資訊。";
+
+            container.appendChild(message);
+        }
+    }
+
+    createPreviewGeometry(meshData) {
+        const vertices = meshData.vertices;
+        const faces = meshData.faces;
+
+        const positions = [];
+        const indices = [];
+
+        for (const vertex of vertices) {
+            if (
+                !Array.isArray(vertex) ||
+                vertex.length < 3 ||
+                !vertex.slice(0, 3).every(Number.isFinite)
+            ) {
+                throw new Error("原石頂點資料格式錯誤");
+            }
+
+            positions.push(
+                vertex[0],
+                vertex[1],
+                vertex[2]
+            );
+        }
+
+        for (const face of faces) {
+            if (
+                !Array.isArray(face) ||
+                face.length !== 3 ||
+                !face.every(
+                    index =>
+                        Number.isInteger(index) &&
+                        index >= 0 &&
+                        index < vertices.length
+                )
+            ) {
+                throw new Error("原石面資料格式錯誤");
+            }
+
+            indices.push(face[0], face[1], face[2]);
+        }
+
+        const geometry = new THREE.BufferGeometry();
+
+        geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(positions, 3)
+        );
+
+        geometry.setIndex(indices);
+
+        geometry.computeVertexNormals();
+        geometry.computeBoundingBox();
+        geometry.computeBoundingSphere();
+
+        const center = geometry.boundingBox.getCenter(
+            new THREE.Vector3()
+        );
+
+        geometry.translate(
+            -center.x,
+            -center.y,
+            -center.z
+        );
+
+        const size = geometry.boundingBox.getSize(
+            new THREE.Vector3()
+        );
+
+        const maxDimension = Math.max(
+            size.x,
+            size.y,
+            size.z,
+            0.001
+        );
+
+        const scale = 1.8 / maxDimension;
+
+        geometry.scale(scale, scale, scale);
+
+        geometry.computeVertexNormals();
+        geometry.computeBoundingSphere();
+
+        return geometry;
+    }
+
+    resizePreview() {
+        const preview = this.preview;
+
+        if (
+            !preview.renderer ||
+            !preview.camera ||
+            !preview.container
+        ) {
+            return;
+        }
+
+        const width = preview.container.clientWidth;
+        const height = preview.container.clientHeight;
+
+        if (width <= 0 || height <= 0) return;
+
+        preview.camera.aspect = width / height;
+        preview.camera.updateProjectionMatrix();
+
+        preview.renderer.setSize(width, height);
+    }
+
+    destroyPreview() {
+        const preview = this.preview;
+
+        if (preview.animationFrame !== null) {
+            cancelAnimationFrame(preview.animationFrame);
+            preview.animationFrame = null;
+        }
+
+        preview.resizeObserver?.disconnect();
+        preview.resizeObserver = null;
+
+        preview.controls?.dispose();
+        preview.controls = null;
+
+        preview.geometry?.dispose();
+        preview.geometry = null;
+
+        preview.material?.dispose();
+        preview.material = null;
+
+        if (preview.renderer) {
+            preview.renderer.dispose();
+
+            if (preview.renderer.domElement.parentNode) {
+                preview.renderer.domElement.parentNode.removeChild(
+                    preview.renderer.domElement
+                );
+            }
+        }
+
+        preview.renderer = null;
+        preview.scene = null;
+        preview.camera = null;
+        preview.mesh = null;
+        preview.container = null;
     }
 
     renderJadeData(jadeData) {
@@ -377,10 +759,20 @@ class InventoryUI {
             formatDate(stone.obtainedAt);
 
         this.renderJadeData(stone.jadeData);
+
+        const previewContainer = getElement(
+            "inventory-stone-preview"
+        );
+
+        if (!previewContainer) {
+            this.renderStonePreview(stone);
+        }
     }
 
     closeDetail() {
         this.selectedStoneId = null;
+
+        this.destroyPreview();
 
         const panel = getElement("inventory-detail");
 
