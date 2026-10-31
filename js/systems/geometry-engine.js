@@ -1,7 +1,11 @@
-
- // js/systems/geometry-engine.js
+// js/systems/geometry-engine.js
 
 class GeometryEngine {
+    constructor() {
+        this.EPSILON = 1e-8;
+        this.KEY_PRECISION = 1e8;
+    }
+
     subtract(a, b) {
         return [
             a[0] - b[0],
@@ -63,10 +67,30 @@ class GeometryEngine {
         );
     }
 
+    pointKey(point) {
+        return point
+            .map(value => Math.round(value * this.KEY_PRECISION))
+            .join(",");
+    }
+
+    samePoint(a, b) {
+        return this.length(this.subtract(a, b)) < this.EPSILON;
+    }
+
+    uniquePoints(points) {
+        const result = new Map();
+
+        for (const point of points) {
+            result.set(this.pointKey(point), [...point]);
+        }
+
+        return [...result.values()];
+    }
+
     intersectEdge(a, b, distanceA, distanceB) {
         const denominator = distanceA - distanceB;
 
-        if (Math.abs(denominator) < 1e-10) {
+        if (Math.abs(denominator) < 1e-12) {
             return [...a];
         }
 
@@ -87,9 +111,7 @@ class GeometryEngine {
         const lookup = new Map();
 
         const getIndex = (point) => {
-            const key = point
-                .map(value => Math.round(value * 1e8))
-                .join(",");
+            const key = this.pointKey(point);
 
             if (lookup.has(key)) {
                 return lookup.get(key);
@@ -127,11 +149,11 @@ class GeometryEngine {
                 plane
             );
 
-            const currentInside = distanceCurrent >= -1e-8;
-            const nextInside = distanceNext >= -1e-8;
+            const currentInside = distanceCurrent >= -this.EPSILON;
+            const nextInside = distanceNext >= -this.EPSILON;
 
             if (currentInside) {
-                output.push(current);
+                output.push([...current]);
             }
 
             if (currentInside !== nextInside) {
@@ -147,84 +169,222 @@ class GeometryEngine {
             }
         }
 
+        const cleanOutput = [];
+
+        for (const point of output) {
+            if (
+                cleanOutput.length === 0 ||
+                !this.samePoint(
+                    cleanOutput[cleanOutput.length - 1],
+                    point
+                )
+            ) {
+                cleanOutput.push(point);
+            }
+        }
+
+        if (
+            cleanOutput.length > 1 &&
+            this.samePoint(
+                cleanOutput[0],
+                cleanOutput[cleanOutput.length - 1]
+            )
+        ) {
+            cleanOutput.pop();
+        }
+
         return {
-            output,
-            intersections
+            output: cleanOutput,
+            intersections: this.uniquePoints(intersections)
         };
     }
 
-    createCap(points, plane, vertexStore, faces) {
-        const unique = new Map();
+    collectBoundarySegments(mesh, plane) {
+        const segments = [];
 
-        for (const point of points) {
-            const key = point
-                .map(value => Math.round(value * 1e8))
-                .join(",");
+        for (const face of mesh.faces) {
+            const triangle = face.map(index => mesh.vertices[index]);
 
-            unique.set(key, point);
+            const result = this.clipTriangle(triangle, plane);
+            const points = result.intersections;
+
+            if (points.length === 2) {
+                if (!this.samePoint(points[0], points[1])) {
+                    segments.push([
+                        points[0],
+                        points[1]
+                    ]);
+                }
+            }
         }
 
-        const capPoints = [...unique.values()];
+        return segments;
+    }
 
-        if (capPoints.length < 3) {
-            return;
+    connectBoundaryLoops(segments) {
+        const nodes = new Map();
+        const edges = [];
+        const edgeSet = new Set();
+
+        const addNode = (point) => {
+            const key = this.pointKey(point);
+
+            if (!nodes.has(key)) {
+                nodes.set(key, {
+                    point: [...point],
+                    edges: []
+                });
+            }
+
+            return key;
+        };
+
+        for (const segment of segments) {
+            const keyA = addNode(segment[0]);
+            const keyB = addNode(segment[1]);
+
+            if (keyA === keyB) {
+                continue;
+            }
+
+            const edgeKey = [keyA, keyB].sort().join("|");
+
+            if (edgeSet.has(edgeKey)) {
+                continue;
+            }
+
+            edgeSet.add(edgeKey);
+
+            const edgeIndex = edges.length;
+
+            edges.push({
+                a: keyA,
+                b: keyB,
+                used: false
+            });
+
+            nodes.get(keyA).edges.push(edgeIndex);
+            nodes.get(keyB).edges.push(edgeIndex);
         }
 
-        const center = [0, 0, 0];
-
-        for (const point of capPoints) {
-            center[0] += point[0];
-            center[1] += point[1];
-            center[2] += point[2];
+        for (const [key, node] of nodes) {
+            if (node.edges.length !== 2) {
+                throw new Error(
+                    `切割輪廓不完整：交點 ${key} 連接了 ${node.edges.length} 條線段`
+                );
+            }
         }
 
-        center[0] /= capPoints.length;
-        center[1] /= capPoints.length;
-        center[2] /= capPoints.length;
+        const loops = [];
 
-        const normal = this.normalize(plane.normal);
+        for (let startEdge = 0; startEdge < edges.length; startEdge++) {
+            if (edges[startEdge].used) {
+                continue;
+            }
 
-        const reference = Math.abs(normal[0]) < 0.9
-            ? [1, 0, 0]
-            : [0, 1, 0];
+            const firstEdge = edges[startEdge];
 
-        const axisU = this.normalize(
-            this.cross(normal, reference)
-        );
+            const loop = [];
+            const startKey = firstEdge.a;
 
-        const axisV = this.cross(normal, axisU);
+            let currentKey = startKey;
+            let currentEdgeIndex = startEdge;
 
-        // 將切面交點依照角度排序
-        capPoints.sort((a, b) => {
-            const va = this.subtract(a, center);
-            const vb = this.subtract(b, center);
+            let closed = false;
+            let safety = 0;
 
-            const angleA = Math.atan2(
-                this.dot(va, axisV),
-                this.dot(va, axisU)
-            );
+            while (safety++ <= edges.length + 1) {
+                const edge = edges[currentEdgeIndex];
 
-            const angleB = Math.atan2(
-                this.dot(vb, axisV),
-                this.dot(vb, axisU)
-            );
+                if (edge.used) {
+                    break;
+                }
 
-            return angleA - angleB;
-        });
+                edge.used = true;
 
-        const indices = capPoints.map(point =>
+                loop.push(nodes.get(currentKey).point);
+
+                const nextKey = edge.a === currentKey
+                    ? edge.b
+                    : edge.a;
+
+                if (nextKey === startKey) {
+                    closed = true;
+                    break;
+                }
+
+                const nextNode = nodes.get(nextKey);
+
+                const nextEdgeIndex = nextNode.edges.find(
+                    index => !edges[index].used
+                );
+
+                if (nextEdgeIndex === undefined) {
+                    break;
+                }
+
+                currentKey = nextKey;
+                currentEdgeIndex = nextEdgeIndex;
+            }
+
+            if (!closed || loop.length < 3) {
+                throw new Error("切割輪廓無法形成封閉區域");
+            }
+
+            loops.push(loop);
+        }
+
+        return loops;
+    }
+
+    calculatePolygonNormal(points) {
+        const normal = [0, 0, 0];
+
+        for (let i = 0; i < points.length; i++) {
+            const current = points[i];
+            const next = points[(i + 1) % points.length];
+
+            normal[0] +=
+                (current[1] - next[1]) *
+                (current[2] + next[2]);
+
+            normal[1] +=
+                (current[2] - next[2]) *
+                (current[0] + next[0]);
+
+            normal[2] +=
+                (current[0] - next[0]) *
+                (current[1] + next[1]);
+        }
+
+        return normal;
+    }
+
+    createCap(loop, plane, vertexStore, faces) {
+        let points = [...loop];
+
+        const polygonNormal = this.calculatePolygonNormal(points);
+
+        // 保留模型的切面外側方向應與切割平面法線相反。
+        const desiredNormal = this.scale(plane.normal, -1);
+
+        if (this.dot(polygonNormal, desiredNormal) < 0) {
+            points.reverse();
+        }
+
+        const indices = points.map(point =>
             vertexStore.getIndex(point)
         );
 
-        // 修正封口方向：
-        // 切面法線必須朝向保留模型的外側。
-        // 因此將原本的三角形頂點順序反轉。
+        // 將已連接成封閉輪廓的多邊形進行扇形三角剖分。
         for (let i = 1; i < indices.length - 1; i++) {
-            faces.push([
-                indices[0],
-                indices[i + 1],
-                indices[i]
-            ]);
+            const a = indices[0];
+            const b = indices[i];
+            const c = indices[i + 1];
+
+            if (a !== b && b !== c && c !== a) {
+                faces.push([a, b, c]);
+            }
         }
     }
 
@@ -242,15 +402,14 @@ class GeometryEngine {
         }
 
         const normalizedPlane = {
-            point: plane.point,
+            point: [...plane.point],
             normal: this.normalize(plane.normal)
         };
 
         const store = this.createVertexStore();
-
         const faces = [];
-        const capPoints = [];
 
+        // 第一步：裁切原始三角形。
         for (const face of mesh.faces) {
             if (!Array.isArray(face) || face.length !== 3) {
                 throw new Error("目前只支援三角形面");
@@ -271,8 +430,6 @@ class GeometryEngine {
                 normalizedPlane
             );
 
-            capPoints.push(...result.intersections);
-
             if (result.output.length < 3) {
                 continue;
             }
@@ -282,20 +439,34 @@ class GeometryEngine {
             );
 
             for (let i = 1; i < indices.length - 1; i++) {
-                faces.push([
-                    indices[0],
-                    indices[i],
-                    indices[i + 1]
-                ]);
+                const a = indices[0];
+                const b = indices[i];
+                const c = indices[i + 1];
+
+                if (a !== b && b !== c && c !== a) {
+                    faces.push([a, b, c]);
+                }
             }
         }
 
-        this.createCap(
-            capPoints,
-            normalizedPlane,
-            store,
-            faces
+        // 第二步：從每個原始三角形收集切割線段。
+        const segments = this.collectBoundarySegments(
+            mesh,
+            normalizedPlane
         );
+
+        // 第三步：把線段連接成封閉輪廓。
+        const loops = this.connectBoundaryLoops(segments);
+
+        // 第四步：為每個封閉輪廓建立封口面。
+        for (const loop of loops) {
+            this.createCap(
+                loop,
+                normalizedPlane,
+                store,
+                faces
+            );
+        }
 
         return {
             vertices: store.vertices,
@@ -305,3 +476,7 @@ class GeometryEngine {
 }
 
 export const geometryEngine = new GeometryEngine();
+
+
+
+
