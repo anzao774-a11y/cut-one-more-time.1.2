@@ -1,7 +1,7 @@
-// js/systems/geometry-engine.js
+
+ // js/systems/geometry-engine.js
 
 class GeometryEngine {
-    // 向量相減
     subtract(a, b) {
         return [
             a[0] - b[0],
@@ -10,7 +10,6 @@ class GeometryEngine {
         ];
     }
 
-    // 向量相加
     add(a, b) {
         return [
             a[0] + b[0],
@@ -19,7 +18,6 @@ class GeometryEngine {
         ];
     }
 
-    // 向量縮放
     scale(v, s) {
         return [
             v[0] * s,
@@ -28,7 +26,6 @@ class GeometryEngine {
         ];
     }
 
-    // 內積
     dot(a, b) {
         return (
             a[0] * b[0] +
@@ -37,7 +34,6 @@ class GeometryEngine {
         );
     }
 
-    // 外積
     cross(a, b) {
         return [
             a[1] * b[2] - a[2] * b[1],
@@ -46,12 +42,10 @@ class GeometryEngine {
         ];
     }
 
-    // 向量長度
     length(v) {
         return Math.sqrt(this.dot(v, v));
     }
 
-    // 向量正規化
     normalize(v) {
         const len = this.length(v);
 
@@ -62,7 +56,6 @@ class GeometryEngine {
         return this.scale(v, 1 / len);
     }
 
-    // 計算點到切割平面的有號距離
     signedDistance(point, plane) {
         return this.dot(
             this.subtract(point, plane.point),
@@ -70,7 +63,6 @@ class GeometryEngine {
         );
     }
 
-    // 計算兩點之間的切割交點
     intersectEdge(a, b, distanceA, distanceB) {
         const denominator = distanceA - distanceB;
 
@@ -78,7 +70,10 @@ class GeometryEngine {
             return [...a];
         }
 
-        const t = distanceA / denominator;
+        const t = Math.max(
+            0,
+            Math.min(1, distanceA / denominator)
+        );
 
         return [
             a[0] + (b[0] - a[0]) * t,
@@ -87,7 +82,6 @@ class GeometryEngine {
         ];
     }
 
-    // 建立唯一頂點，避免重複座標
     createVertexStore() {
         const vertices = [];
         const lookup = new Map();
@@ -102,16 +96,19 @@ class GeometryEngine {
             }
 
             const index = vertices.length;
+
             vertices.push([...point]);
             lookup.set(key, index);
 
             return index;
         };
 
-        return { vertices, getIndex };
+        return {
+            vertices,
+            getIndex
+        };
     }
 
-    // 將三角形裁切，只保留平面正側
     clipTriangle(triangle, plane) {
         const output = [];
         const intersections = [];
@@ -120,11 +117,18 @@ class GeometryEngine {
             const current = triangle[i];
             const next = triangle[(i + 1) % triangle.length];
 
-            const dCurrent = this.signedDistance(current, plane);
-            const dNext = this.signedDistance(next, plane);
+            const distanceCurrent = this.signedDistance(
+                current,
+                plane
+            );
 
-            const currentInside = dCurrent >= -1e-8;
-            const nextInside = dNext >= -1e-8;
+            const distanceNext = this.signedDistance(
+                next,
+                plane
+            );
+
+            const currentInside = distanceCurrent >= -1e-8;
+            const nextInside = distanceNext >= -1e-8;
 
             if (currentInside) {
                 output.push(current);
@@ -134,8 +138,8 @@ class GeometryEngine {
                 const intersection = this.intersectEdge(
                     current,
                     next,
-                    dCurrent,
-                    dNext
+                    distanceCurrent,
+                    distanceNext
                 );
 
                 output.push(intersection);
@@ -143,10 +147,12 @@ class GeometryEngine {
             }
         }
 
-        return { output, intersections };
+        return {
+            output,
+            intersections
+        };
     }
 
-    // 建立切面封口
     createCap(points, plane, vertexStore, faces) {
         const unique = new Map();
 
@@ -188,6 +194,7 @@ class GeometryEngine {
 
         const axisV = this.cross(normal, axisU);
 
+        // 將切面交點依照角度排序
         capPoints.sort((a, b) => {
             const va = this.subtract(a, center);
             const vb = this.subtract(b, center);
@@ -209,20 +216,24 @@ class GeometryEngine {
             vertexStore.getIndex(point)
         );
 
-        // 使用扇形三角化建立封口
+        // 修正封口方向：
+        // 切面法線必須朝向保留模型的外側。
+        // 因此將原本的三角形頂點順序反轉。
         for (let i = 1; i < indices.length - 1; i++) {
             faces.push([
                 indices[0],
-                indices[i],
-                indices[i + 1]
+                indices[i + 1],
+                indices[i]
             ]);
         }
     }
 
-    // 切割網格，保留切割平面正側
     clipMesh(mesh, plane) {
-        if (!mesh || !Array.isArray(mesh.vertices) ||
-            !Array.isArray(mesh.faces)) {
+        if (
+            !mesh ||
+            !Array.isArray(mesh.vertices) ||
+            !Array.isArray(mesh.faces)
+        ) {
             throw new Error("模型格式錯誤");
         }
 
@@ -236,19 +247,20 @@ class GeometryEngine {
         };
 
         const store = this.createVertexStore();
+
         const faces = [];
         const capPoints = [];
 
         for (const face of mesh.faces) {
             if (!Array.isArray(face) || face.length !== 3) {
-                continue;
+                throw new Error("目前只支援三角形面");
             }
 
             const triangle = face.map(index => {
                 const vertex = mesh.vertices[index];
 
                 if (!vertex) {
-                    throw new Error("模型面包含無效頂點索引");
+                    throw new Error("模型包含無效頂點索引");
                 }
 
                 return vertex;
