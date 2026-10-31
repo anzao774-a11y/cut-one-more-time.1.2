@@ -2,6 +2,7 @@
 import { GAME_CONFIG } from "../config/game-config.js";
 import { saveManager } from "../core/save-manager.js";
 import { eventBus } from "../core/event-bus.js";
+import { jadeGenerator } from "./jade-generator.js";
 
 const RARITIES = [
     { id: "gypsy", name: "吉普賽", weight: 55, level: 1 },
@@ -46,30 +47,42 @@ function weightedRarity() {
 }
 
 function pickRarity(pity, forceEpic = false) {
-    if (pity.legendary >= GAME_CONFIG.gacha.legendaryPity - 1) {
+    // 傳說保底優先於史詩保底。
+    if (
+        pity.legendary >=
+        GAME_CONFIG.gacha.legendaryPity - 1
+    ) {
         return RARITIES[4];
     }
 
+    // 史詩保底或十連抽第十抽保證。
     if (
         forceEpic ||
         pity.epic >= GAME_CONFIG.gacha.epicPity - 1
     ) {
         const roll = Math.random();
 
-        return roll < 0.1 ? RARITIES[4] : RARITIES[3];
+        return roll < 0.1
+            ? RARITIES[4]
+            : RARITIES[3];
     }
 
     return weightedRarity();
 }
 
 function createStone(rarity) {
-    return {
+    const stone = {
         id: createId(),
         rarity: rarity.id,
         rarityName: rarity.name,
         obtainedAt: new Date().toISOString(),
         status: "uncut"
     };
+
+    // 抽到原石時，立即生成內部玉石資料。
+    stone.jadeData = jadeGenerator.generate(stone);
+
+    return stone;
 }
 
 class GachaSystem {
@@ -103,20 +116,21 @@ class GachaSystem {
         const results = [];
 
         for (let index = 0; index < count; index++) {
-            const firstNine = count === 10 && index < 9;
-
+            // 十連抽第十抽檢查是否已有史詩或傳說。
             const hasEpicOrHigher = results.some(
                 item => item.level >= 4
             );
 
-            const forceEpic = count === 10 &&
+            const forceEpic =
+                count === 10 &&
                 index === 9 &&
                 !hasEpicOrHigher;
 
             const rarity = pickRarity(pity, forceEpic);
-            const stone = createStone(rarity);
 
+            const stone = createStone(rarity);
             stone.level = rarity.level;
+
             results.push(stone);
 
             data.statistics ??= {
@@ -126,21 +140,19 @@ class GachaSystem {
 
             data.statistics.totalPulls += 1;
 
+            // 史詩或傳說會重置史詩保底。
             if (rarity.level >= 4) {
                 pity.epic = 0;
             } else {
                 pity.epic += 1;
             }
 
+            // 只有傳說會重置傳說保底。
             if (rarity.level === 5) {
                 pity.legendary = 0;
             } else {
                 pity.legendary += 1;
             }
-
-            // 前九抽照常依照機率抽取。
-            // 第十抽才檢查十連抽史詩保證。
-            void firstNine;
         }
 
         data.inventory ??= [];
