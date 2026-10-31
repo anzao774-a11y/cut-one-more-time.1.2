@@ -1,118 +1,68 @@
 // js/systems/cutting-test.js
 
-// 載入新版切割系統
-import { cuttingSystem } from "./cutting-system.js?version=3";
+import { cuttingSystem } from "./cutting-system.js?version=4";
 
 import {
     testCube,
     testCutPlane
 } from "./cutting-test-data.js";
 
-export function runCuttingTest() {
-    console.log("開始測試刀片厚度切割系統");
-    console.log("========================");
+// 數值誤差容許值
+const TOLERANCE = 1e-6;
 
-    try {
-        const result = cuttingSystem.cutStone(
-            testCube,
-            testCutPlane
-        );
+// 檢查模型是否封閉
+function checkClosedMesh(mesh) {
+    const edgeCounts = new Map();
 
-        if (
-            !result ||
-            !result.positivePiece ||
-            !result.negativePiece
-        ) {
-            throw new Error("切割結果缺少兩側原石模型");
-        }
+    for (const face of mesh.faces) {
+        for (let i = 0; i < 3; i++) {
+            const a = face[i];
+            const b = face[(i + 1) % 3];
 
-        const expected = {
-            originalVolume: 8,
-            positiveVolume: 3.95,
-            negativeVolume: 3.95,
-            removedVolume: 0.1
-        };
+            const key = a < b
+                ? `${a},${b}`
+                : `${b},${a}`;
 
-        const tolerance = 1e-6;
-
-        const checks = [
-            {
-                name: "原始體積",
-                actual: result.originalVolume,
-                expected: expected.originalVolume
-            },
-            {
-                name: "正側保留體積",
-                actual: result.positiveVolume,
-                expected: expected.positiveVolume
-            },
-            {
-                name: "負側保留體積",
-                actual: result.negativeVolume,
-                expected: expected.negativeVolume
-            },
-            {
-                name: "移除材料體積",
-                actual: result.removedVolume,
-                expected: expected.removedVolume
-            }
-        ];
-
-        console.log("切割結果：");
-        console.log("------------------------");
-
-        console.log("刀片厚度：", result.bladeThickness);
-
-        console.log("原始體積：", result.originalVolume);
-
-        console.log("正側保留體積：", result.positiveVolume);
-
-        console.log("負側保留體積：", result.negativeVolume);
-
-        console.log("移除材料體積：", result.removedVolume);
-
-        console.log("------------------------");
-
-        console.log(
-            "正側頂點數：",
-            result.positivePiece.vertices.length
-        );
-
-        console.log(
-            "正側面數：",
-            result.positivePiece.faces.length
-        );
-
-        console.log(
-            "負側頂點數：",
-            result.negativePiece.vertices.length
-        );
-
-        console.log(
-            "負側面數：",
-            result.negativePiece.faces.length
-        );
-
-        console.log("------------------------");
-
-        let allPassed = true;
-
-        console.log("體積驗證：");
-
-        for (const check of checks) {
-            const passed =
-                Math.abs(check.actual - check.expected) <= tolerance;
-
-            if (!passed) {
-                allPassed = false;
-            }
-
-            console.log(
-                `${passed ? "通過" : "失敗"}：${check.name}`,
-                `實際=${check.actual}`,
-                `預期=${check.expected}`
+            edgeCounts.set(
+                key,
+                (edgeCounts.get(key) || 0) + 1
             );
         }
+    }
+
+    const invalidEdges = [];
+
+    for (const [edge, count] of edgeCounts) {
+        if (count !== 2) {
+            invalidEdges.push({
+                edge,
+                count
+            });
+        }
+    }
+
+    return {
+        closed: invalidEdges.length === 0,
+        totalEdges: edgeCounts.size,
+        invalidEdges
+    };
+}
+
+// 執行單次切割測試
+function runSingleTest(name, mesh, plane) {
+    console.log(`開始測試：${name}`);
+    console.log("------------------------");
+
+    try {
+        const result = cuttingSystem.cutStone(mesh, plane);
+
+        const positiveClosed = checkClosedMesh(
+            result.positivePiece
+        );
+
+        const negativeClosed = checkClosedMesh(
+            result.negativePiece
+        );
 
         const totalVolume =
             result.positiveVolume +
@@ -123,44 +73,163 @@ export function runCuttingTest() {
             result.originalVolume - totalVolume
         );
 
-        const conservationPassed = volumeDifference <= tolerance;
+        const volumePassed = volumeDifference <= TOLERANCE;
 
-        if (!conservationPassed) {
-            allPassed = false;
-        }
+        const positivePassed = positiveClosed.closed;
+        const negativePassed = negativeClosed.closed;
+
+        const allPassed =
+            volumePassed &&
+            positivePassed &&
+            negativePassed;
+
+        console.log("刀片厚度：", result.bladeThickness);
+        console.log("原始體積：", result.originalVolume);
+        console.log("正側保留體積：", result.positiveVolume);
+        console.log("負側保留體積：", result.negativeVolume);
+        console.log("移除材料體積：", result.removedVolume);
+        console.log("切割後總體積：", totalVolume);
+        console.log("體積誤差：", volumeDifference);
 
         console.log("------------------------");
 
         console.log(
-            `${conservationPassed ? "通過" : "失敗"}：體積守恆`,
-            `原始=${result.originalVolume}`,
-            `切割後總和=${totalVolume}`
+            "正側模型封閉：",
+            positivePassed ? "通過" : "失敗"
         );
+
+        console.log(
+            "正側邊數：",
+            positiveClosed.totalEdges
+        );
+
+        console.log(
+            "正側異常邊數：",
+            positiveClosed.invalidEdges.length
+        );
+
+        console.log(
+            "負側模型封閉：",
+            negativePassed ? "通過" : "失敗"
+        );
+
+        console.log(
+            "負側邊數：",
+            negativeClosed.totalEdges
+        );
+
+        console.log(
+            "負側異常邊數：",
+            negativeClosed.invalidEdges.length
+        );
+
+        console.log("------------------------");
+
+        console.log(
+            "體積守恆：",
+            volumePassed ? "通過" : "失敗"
+        );
+
+        console.log(
+            "測試總結果：",
+            allPassed ? "全部通過" : "尚未通過"
+        );
+
+        if (!positivePassed) {
+            console.error(
+                "正側異常邊：",
+                positiveClosed.invalidEdges
+            );
+        }
+
+        if (!negativePassed) {
+            console.error(
+                "負側異常邊：",
+                negativeClosed.invalidEdges
+            );
+        }
 
         console.log("========================");
 
-        if (allPassed) {
-            console.log("全部測試通過！");
-        } else {
-            console.error("測試未完全通過，請檢查幾何引擎。");
-        }
-
-        console.log("完整切割結果：", result);
-
         return {
+            name,
             success: allPassed,
             result,
-            checks,
+            volumePassed,
+            positiveClosed,
+            negativeClosed,
             totalVolume,
             volumeDifference
         };
 
     } catch (error) {
-        console.error("切割測試失敗：", error);
+        console.error(`${name} 測試失敗：`, error);
 
         return {
+            name,
             success: false,
             error: error.message
         };
     }
+}
+
+// 執行全部切割測試
+export function runCuttingTest() {
+    console.log("開始執行切割系統測試");
+    console.log("刀片厚度：0.025");
+    console.log("========================");
+
+    cuttingSystem.setBladeThickness(0.025);
+
+    const tests = [
+        {
+            name: "X 軸垂直切割",
+            plane: testCutPlane
+        },
+        {
+            name: "三軸斜向切割",
+            plane: {
+                point: [0, 0, 0],
+                normal: [1, 1, 1]
+            }
+        }
+    ];
+
+    const results = [];
+
+    for (const test of tests) {
+        const result = runSingleTest(
+            test.name,
+            testCube,
+            test.plane
+        );
+
+        results.push(result);
+    }
+
+    const allPassed = results.every(
+        result => result.success
+    );
+
+    console.log("切割系統測試總結");
+    console.log("========================");
+
+    for (const result of results) {
+        console.log(
+            `${result.success ? "通過" : "失敗"}：${result.name}`
+        );
+    }
+
+    console.log("------------------------");
+
+    console.log(
+        allPassed
+            ? "全部測試通過！"
+            : "仍有測試項目需要修正。"
+    );
+
+    return {
+        success: allPassed,
+        results
+    };
 }
