@@ -1,5 +1,5 @@
 
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+import * as THREE from "three";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
 import { cuttingSystem } from "../systems/cutting-system.js?version=6";
@@ -11,25 +11,33 @@ import {
 class CuttingUI {
     constructor() {
         this.initialized = false;
-        this.renderer = null;
+
         this.scene = null;
         this.camera = null;
+        this.renderer = null;
         this.controls = null;
-        this.animationFrame = null;
+
+        this.originalGroup = null;
+        this.resultGroup = null;
+        this.previewGroup = null;
 
         this.currentMesh = structuredClone(testIrregularStone);
         this.currentResult = null;
         this.currentView = "original";
 
-        this.material = null;
-        this.positiveMaterial = null;
-        this.negativeMaterial = null;
-        this.originalGroup = null;
-        this.resultGroup = null;
-
         this.axis = "x";
         this.cutPosition = 0;
         this.bladeThickness = 0.025;
+
+        this.animationFrame = null;
+        this.resizeObserver = null;
+
+        this.materials = {
+            original: null,
+            positive: null,
+            negative: null,
+            preview: null
+        };
 
         this.elements = {};
     }
@@ -49,55 +57,59 @@ class CuttingUI {
         this.createScene();
         this.createMaterials();
         this.bindEvents();
+
         this.loadOriginalStone();
-        this.animate();
+        this.updateCutPreview();
+        this.updatePositionLabel();
 
-        window.addEventListener("resize", () => this.resize());
-
-        document.addEventListener("cutting:page-opened", () => {
+        this.resizeObserver = new ResizeObserver(() => {
             this.resize();
         });
+
+        this.resizeObserver.observe(this.elements.viewer);
+
+        this.animate();
 
         console.log("3D 切割工作台初始化完成");
     }
 
     cacheElements() {
-        const ids = [
-            "cutting-viewer",
-            "cut-axis",
-            "cut-position",
-            "cut-position-value",
-            "blade-thickness",
-            "blade-thickness-value",
-            "cut-button",
-            "reset-cut-button",
-            "cutting-message",
-            "cutting-results",
-            "cut-original-volume",
-            "cut-positive-volume",
-            "cut-negative-volume",
-            "cut-removed-volume",
-            "cut-volume-difference",
-            "cut-view-original",
-            "cut-view-results",
-            "cut-test-cube"
-        ];
+        const mapping = {
+            viewer: "cutting-viewer",
+            axis: "cut-axis",
+            position: "cut-position",
+            positionValue: "cut-position-value",
+            positionLabel: "cut-position-label",
+            thickness: "blade-thickness",
+            thicknessValue: "blade-thickness-value",
+            cutButton: "cut-button",
+            resetButton: "reset-cut-button",
+            message: "cutting-message",
+            results: "cutting-results",
+            originalVolume: "cut-original-volume",
+            positiveVolume: "cut-positive-volume",
+            negativeVolume: "cut-negative-volume",
+            removedVolume: "cut-removed-volume",
+            volumeDifference: "cut-volume-difference",
+            viewOriginal: "cut-view-original",
+            viewResults: "cut-view-results",
+            testCube: "cut-test-cube"
+        };
 
-        ids.forEach(id => {
-            this.elements[id.replaceAll("-", "_")] =
-                document.getElementById(id);
-        });
+        for (const [key, id] of Object.entries(mapping)) {
+            this.elements[key] = document.getElementById(id);
+        }
     }
 
     createScene() {
-        const viewer = this.elements.cutting_viewer;
+        const viewer = this.elements.viewer;
 
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color("#20231e");
 
         this.camera = new THREE.PerspectiveCamera(
             45,
-            viewer.clientWidth / Math.max(viewer.clientHeight, 1),
+            1,
             0.1,
             100
         );
@@ -110,17 +122,12 @@ class CuttingUI {
         });
 
         this.renderer.setPixelRatio(
-            Math.min(window.devicePixelRatio, 2)
+            Math.min(window.devicePixelRatio || 1, 2)
         );
 
-        this.renderer.setSize(
-            viewer.clientWidth,
-            viewer.clientHeight
-        );
-
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         viewer.appendChild(this.renderer.domElement);
 
@@ -133,13 +140,11 @@ class CuttingUI {
         this.controls.dampingFactor = 0.06;
         this.controls.minDistance = 2.5;
         this.controls.maxDistance = 12;
+        this.controls.target.set(0, 0, 0);
 
-        const ambient = new THREE.AmbientLight(
-            0xffffff,
-            1.7
+        this.scene.add(
+            new THREE.AmbientLight(0xffffff, 1.7)
         );
-
-        this.scene.add(ambient);
 
         const keyLight = new THREE.DirectionalLight(
             0xffe2a1,
@@ -188,38 +193,49 @@ class CuttingUI {
         floor.rotation.x = -Math.PI / 2;
         floor.position.y = -1.58;
         floor.receiveShadow = true;
+
         this.scene.add(floor);
+
+        this.resize();
     }
 
     createMaterials() {
-        this.material = new THREE.MeshStandardMaterial({
+        this.materials.original = new THREE.MeshStandardMaterial({
             color: 0x777b68,
             roughness: 0.78,
             metalness: 0.05,
             flatShading: true
         });
 
-        this.positiveMaterial = new THREE.MeshStandardMaterial({
+        this.materials.positive = new THREE.MeshStandardMaterial({
             color: 0x879b72,
             roughness: 0.68,
             metalness: 0.06,
             flatShading: true
         });
 
-        this.negativeMaterial = new THREE.MeshStandardMaterial({
+        this.materials.negative = new THREE.MeshStandardMaterial({
             color: 0xb59a61,
             roughness: 0.65,
             metalness: 0.08,
             flatShading: true
         });
+
+        this.materials.preview = new THREE.MeshBasicMaterial({
+            color: 0xd5b56c,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
     }
 
-    meshToGeometry(mesh) {
+    meshToGeometry(meshData) {
         const positions = [];
 
-        for (const face of mesh.faces) {
+        for (const face of meshData.faces) {
             for (const index of face) {
-                const vertex = mesh.vertices[index];
+                const vertex = meshData.vertices[index];
 
                 positions.push(
                     vertex[0],
@@ -243,51 +259,58 @@ class CuttingUI {
     }
 
     createStoneMesh(meshData, material) {
-        const geometry = this.meshToGeometry(meshData);
-
-        const mesh = new THREE.Mesh(
-            geometry,
+        const stone = new THREE.Mesh(
+            this.meshToGeometry(meshData),
             material
         );
 
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        stone.castShadow = true;
+        stone.receiveShadow = true;
 
-        return mesh;
+        return stone;
     }
 
     clearGroup(group) {
         if (!group) return;
 
+        this.scene.remove(group);
+
         group.traverse(object => {
-            if (object.isMesh) {
+            if (object.isMesh && object.geometry) {
                 object.geometry.dispose();
             }
         });
+    }
 
-        this.scene.remove(group);
+    clearPreview() {
+        if (!this.previewGroup) return;
+
+        this.clearGroup(this.previewGroup);
+        this.previewGroup = null;
     }
 
     loadOriginalStone() {
         this.clearGroup(this.originalGroup);
         this.clearGroup(this.resultGroup);
+        this.clearPreview();
 
         this.originalGroup = new THREE.Group();
         this.resultGroup = null;
 
-        const stone = this.createStoneMesh(
-            this.currentMesh,
-            this.material
+        this.originalGroup.add(
+            this.createStoneMesh(
+                this.currentMesh,
+                this.materials.original
+            )
         );
 
-        this.originalGroup.add(stone);
         this.scene.add(this.originalGroup);
 
         this.currentView = "original";
 
         this.resetCamera();
-        this.showMessage("原石已載入，可以調整切割位置。");
         this.updateViewButtons();
+        this.updateCutPreview();
     }
 
     resetCamera() {
@@ -316,25 +339,17 @@ class CuttingUI {
     }
 
     updateCutPreview() {
-        this.clearGroup(this.previewGroup);
+        this.clearPreview();
+
+        if (this.currentView !== "original") return;
 
         const plane = this.getCutPlane();
 
         const helper = new THREE.Group();
 
-        const planeGeometry = new THREE.PlaneGeometry(3.2, 3.2);
-
-        const planeMaterial = new THREE.MeshBasicMaterial({
-            color: 0xd5b56c,
-            transparent: true,
-            opacity: 0.2,
-            side: THREE.DoubleSide,
-            depthWrite: false
-        });
-
         const planeMesh = new THREE.Mesh(
-            planeGeometry,
-            planeMaterial
+            new THREE.PlaneGeometry(3.2, 3.2),
+            this.materials.preview
         );
 
         planeMesh.position.set(
@@ -346,59 +361,60 @@ class CuttingUI {
         if (this.axis === "x") {
             planeMesh.rotation.y = Math.PI / 2;
         } else if (this.axis === "y") {
-            planeMesh.rotation.x = Math.PI / 2;
+            planeMesh.rotation.x = -Math.PI / 2;
         }
 
         helper.add(planeMesh);
+
         this.previewGroup = helper;
         this.scene.add(helper);
     }
 
     bindEvents() {
-        this.elements.cut_axis.addEventListener("change", event => {
+        this.elements.axis.addEventListener("change", event => {
             this.axis = event.target.value;
             this.updatePositionLabel();
             this.updateCutPreview();
         });
 
-        this.elements.cut_position.addEventListener("input", event => {
+        this.elements.position.addEventListener("input", event => {
             this.cutPosition = Number(event.target.value);
 
-            this.elements.cut_position_value.textContent =
+            this.elements.positionValue.textContent =
                 this.cutPosition.toFixed(2);
 
             this.updateCutPreview();
         });
 
-        this.elements.blade_thickness.addEventListener("input", event => {
+        this.elements.thickness.addEventListener("input", event => {
             this.bladeThickness = Number(event.target.value);
 
-            this.elements.blade_thickness_value.textContent =
+            this.elements.thicknessValue.textContent =
                 this.bladeThickness.toFixed(3);
-
-            cuttingSystem.setBladeThickness(this.bladeThickness);
         });
 
-        this.elements.cut_button.addEventListener("click", () => {
+        this.elements.cutButton.addEventListener("click", () => {
             this.performCut();
         });
 
-        this.elements.reset_cut_button.addEventListener("click", () => {
+        this.elements.resetButton.addEventListener("click", () => {
             this.resetWorkbench();
         });
 
-        this.elements.cut_view_original.addEventListener("click", () => {
+        this.elements.viewOriginal.addEventListener("click", () => {
             this.showOriginal();
         });
 
-        this.elements.cut_view_results.addEventListener("click", () => {
-            if (this.currentResult) this.showResults();
+        this.elements.viewResults.addEventListener("click", () => {
+            this.showResults();
         });
 
-        this.elements.cut_test_cube.addEventListener("click", () => {
+        this.elements.testCube.addEventListener("click", () => {
             this.currentMesh = structuredClone(testCube);
             this.currentResult = null;
-            this.hideResults();
+
+            this.elements.results.hidden = true;
+
             this.loadOriginalStone();
             this.showMessage("已載入標準立方體測試素材。");
         });
@@ -411,11 +427,8 @@ class CuttingUI {
             z: "Z 軸切割位置"
         };
 
-        const label = document.getElementById("cut-position-label");
-
-        if (label) {
-            label.textContent = labels[this.axis];
-        }
+        this.elements.positionLabel.textContent =
+            labels[this.axis];
 
         this.updateCutPreview();
     }
@@ -432,30 +445,36 @@ class CuttingUI {
             this.currentResult = result;
 
             this.displayResults(result);
-            this.showResults();
+
+            this.elements.results.hidden = false;
 
             this.showMessage("切割完成，兩塊原石已成功分離。");
         } catch (error) {
             console.error("切割失敗：", error);
-            this.showMessage(`切割失敗：${error.message}`, true);
+
+            this.showMessage(
+                `切割失敗：${error.message}`,
+                true
+            );
         }
     }
 
     displayResults(result) {
         this.clearGroup(this.originalGroup);
         this.clearGroup(this.resultGroup);
+        this.clearPreview();
 
         this.originalGroup = null;
         this.resultGroup = new THREE.Group();
 
         const positive = this.createStoneMesh(
             result.positivePiece,
-            this.positiveMaterial
+            this.materials.positive
         );
 
         const negative = this.createStoneMesh(
             result.negativePiece,
-            this.negativeMaterial
+            this.materials.negative
         );
 
         positive.position.x = -1.35;
@@ -464,16 +483,16 @@ class CuttingUI {
         this.resultGroup.add(positive, negative);
         this.scene.add(this.resultGroup);
 
-        this.elements.cut_original_volume.textContent =
+        this.elements.originalVolume.textContent =
             result.originalVolume.toFixed(4);
 
-        this.elements.cut_positive_volume.textContent =
+        this.elements.positiveVolume.textContent =
             result.positiveVolume.toFixed(4);
 
-        this.elements.cut_negative_volume.textContent =
+        this.elements.negativeVolume.textContent =
             result.negativeVolume.toFixed(4);
 
-        this.elements.cut_removed_volume.textContent =
+        this.elements.removedVolume.textContent =
             result.removedVolume.toFixed(4);
 
         const total =
@@ -485,76 +504,73 @@ class CuttingUI {
             result.originalVolume - total
         );
 
-        this.elements.cut_volume_difference.textContent =
+        this.elements.volumeDifference.textContent =
             difference.toFixed(8);
 
         this.currentView = "results";
+
         this.resetCamera();
         this.updateViewButtons();
     }
 
     showOriginal() {
-        if (!this.currentMesh) return;
-
         this.clearGroup(this.resultGroup);
         this.clearGroup(this.originalGroup);
+        this.clearPreview();
 
         this.resultGroup = null;
         this.originalGroup = new THREE.Group();
 
         this.originalGroup.add(
-            this.createStoneMesh(this.currentMesh, this.material)
+            this.createStoneMesh(
+                this.currentMesh,
+                this.materials.original
+            )
         );
 
         this.scene.add(this.originalGroup);
 
         this.currentView = "original";
+
         this.resetCamera();
+        this.updateCutPreview();
         this.updateViewButtons();
     }
 
     showResults() {
-        if (!this.currentResult) return;
-
-        if (!this.resultGroup) {
-            this.displayResults(this.currentResult);
-            return;
-        }
+        if (!this.currentResult || !this.resultGroup) return;
 
         this.clearGroup(this.originalGroup);
+        this.clearPreview();
+
         this.originalGroup = null;
 
         this.scene.add(this.resultGroup);
 
         this.currentView = "results";
+
         this.resetCamera();
         this.updateViewButtons();
     }
 
     updateViewButtons() {
-        this.elements.cut_view_original.classList.toggle(
+        this.elements.viewOriginal.classList.toggle(
             "active",
             this.currentView === "original"
         );
 
-        this.elements.cut_view_results.classList.toggle(
+        this.elements.viewResults.classList.toggle(
             "active",
             this.currentView === "results"
         );
 
-        this.elements.cut_view_results.disabled =
+        this.elements.viewResults.disabled =
             !this.currentResult;
     }
 
-    hideResults() {
-        this.elements.cutting_results.hidden = true;
-    }
-
     showMessage(message, isError = false) {
-        const element = this.elements.cutting_message;
-
-        element.textContent = message;
-        element.classList.toggle("error", isError);
+        this.elements.message.textContent = message;
+        this.elements.message.classList.toggle("error", isError);
     }
 
     resetWorkbench() {
@@ -565,15 +581,17 @@ class CuttingUI {
         this.cutPosition = 0;
         this.bladeThickness = 0.025;
 
-        this.elements.cut_axis.value = "x";
-        this.elements.cut_position.value = "0";
-        this.elements.cut_position_value.textContent = "0.00";
-        this.elements.blade_thickness.value = "0.025";
-        this.elements.blade_thickness_value.textContent = "0.025";
+        this.elements.axis.value = "x";
+        this.elements.position.value = "0";
+        this.elements.positionValue.textContent = "0.00";
+
+        this.elements.thickness.value = "0.025";
+        this.elements.thicknessValue.textContent = "0.025";
+
+        this.elements.results.hidden = true;
 
         cuttingSystem.setBladeThickness(0.025);
 
-        this.hideResults();
         this.loadOriginalStone();
         this.updatePositionLabel();
 
@@ -583,12 +601,12 @@ class CuttingUI {
     resize() {
         if (!this.renderer || !this.camera) return;
 
-        const viewer = this.elements.cutting_viewer;
+        const viewer = this.elements.viewer;
 
         const width = viewer.clientWidth;
         const height = viewer.clientHeight;
 
-        if (!width || !height) return;
+        if (width <= 0 || height <= 0) return;
 
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
