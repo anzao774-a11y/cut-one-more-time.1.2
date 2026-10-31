@@ -1,5 +1,8 @@
 
-import { cuttingSystem } from "./cutting-system.js";
+// js/systems/cutting-test.js
+
+// 使用版本參數，避免載入舊版切割系統
+import { cuttingSystem } from "./cutting-system.js?version=2";
 
 import {
     testCube,
@@ -15,7 +18,16 @@ export function runCuttingTest() {
             testCutPlane
         );
 
-        console.log("切割成功");
+        if (
+            !result ||
+            !result.positivePiece ||
+            !result.negativePiece
+        ) {
+            throw new Error("切割結果缺少兩側原石模型");
+        }
+
+        console.log("切割成功！");
+        console.log("------------------------");
 
         console.log("刀片厚度：", result.bladeThickness);
 
@@ -27,14 +39,29 @@ export function runCuttingTest() {
 
         console.log("移除材料體積：", result.removedVolume);
 
-        console.log("正側頂點數：", result.positivePiece.vertices.length);
+        console.log("------------------------");
 
-        console.log("負側頂點數：", result.negativePiece.vertices.length);
+        console.log(
+            "正側頂點數：",
+            result.positivePiece.vertices.length
+        );
 
-        console.log("正側面數：", result.positivePiece.faces.length);
+        console.log(
+            "正側面數：",
+            result.positivePiece.faces.length
+        );
 
-        console.log("負側面數：", result.negativePiece.faces.length);
+        console.log(
+            "負側頂點數：",
+            result.negativePiece.vertices.length
+        );
 
+        console.log(
+            "負側面數：",
+            result.negativePiece.faces.length
+        );
+
+        console.log("------------------------");
         console.log("完整切割結果：", result);
 
         return result;
