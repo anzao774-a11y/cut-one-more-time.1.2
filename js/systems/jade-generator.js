@@ -5,14 +5,6 @@ import {
     JADE_RARITY_LEVEL
 } from "../config/jade-config.js";
 
-const RARITY_ORDER = [
-    "gypsy",
-    "common",
-    "rare",
-    "epic",
-    "legendary"
-];
-
 function randomBetween(min, max) {
     return min + Math.random() * (max - min);
 }
@@ -27,10 +19,15 @@ function createId() {
 
 function weightedPick(distribution) {
     const entries = Object.entries(distribution);
+
     const total = entries.reduce(
         (sum, [, weight]) => sum + weight,
         0
     );
+
+    if (total <= 0) {
+        throw new Error("玉石機率設定無效。");
+    }
 
     let roll = Math.random() * total;
 
@@ -43,41 +40,6 @@ function weightedPick(distribution) {
     }
 
     return entries[entries.length - 1][0];
-}
-
-function pickJadeRarity(distribution, guaranteedTier) {
-    const selected = weightedPick(distribution);
-
-    if (!guaranteedTier) {
-        return selected;
-    }
-
-    const selectedLevel = JADE_RARITY_LEVEL[selected] ?? 0;
-    const guaranteedLevel = JADE_RARITY_LEVEL[guaranteedTier];
-
-    if (selectedLevel >= guaranteedLevel) {
-        return selected;
-    }
-
-    // 未達保證稀有度時，從保證等級以上重新抽取。
-    const eligible = Object.entries(distribution).filter(
-        ([key]) =>
-            (JADE_RARITY_LEVEL[key] ?? 0) >= guaranteedLevel &&
-            key !== "jade_37"
-    );
-
-    const eligibleTotal = eligible.reduce(
-        (sum, [, weight]) => sum + weight,
-        0
-    );
-
-    if (eligibleTotal <= 0) {
-        return guaranteedTier;
-    }
-
-    return weightedPick(
-        Object.fromEntries(eligible)
-    );
 }
 
 function getSpeciesByRarity(rarity) {
@@ -98,10 +60,61 @@ function pickSpecies(rarity) {
     ];
 }
 
-function allocateVolumes(draws, totalVolume) {
-    if (draws.length === 0) return [];
+function hasGuaranteedJade(draws, guaranteedTier) {
+    if (!guaranteedTier) {
+        return false;
+    }
 
-    // 同一種類的多次抽中，先合併成同一個質量。
+    const requiredLevel = JADE_RARITY_LEVEL[guaranteedTier];
+
+    return draws.some(jade => {
+        // 37 玉是特殊種類，不計入一般稀有度保底。
+        if (jade.id === "jade_37") {
+            return false;
+        }
+
+        const currentLevel = JADE_RARITY_LEVEL[jade.rarity] ?? 0;
+
+        return currentLevel >= requiredLevel;
+    });
+}
+
+function pickRarity(distribution, guaranteedTier) {
+    if (!guaranteedTier) {
+        return weightedPick(distribution);
+    }
+
+    const requiredLevel = JADE_RARITY_LEVEL[guaranteedTier];
+
+    const eligible = Object.entries(distribution).filter(
+        ([rarity]) => {
+            if (rarity === "jade_37") {
+                return false;
+            }
+
+            return (
+                (JADE_RARITY_LEVEL[rarity] ?? 0) >= requiredLevel
+            );
+        }
+    );
+
+    if (eligible.length === 0) {
+        throw new Error(
+            `找不到符合保底條件的玉石稀有度：${guaranteedTier}`
+        );
+    }
+
+    return weightedPick(
+        Object.fromEntries(eligible)
+    );
+}
+
+function allocateVolumes(draws, totalVolume) {
+    if (draws.length === 0) {
+        return [];
+    }
+
+    // 相同種類合併，保留重複抽取次數。
     const grouped = new Map();
 
     for (const jade of draws) {
@@ -119,7 +132,7 @@ function allocateVolumes(draws, totalVolume) {
 
     const groups = [...grouped.values()];
 
-    // 以抽中次數為基礎，加入隨機權重。
+    // 抽中次數越多，分配到的體積權重越高。
     const weights = groups.map(
         group => group.drawCount * randomBetween(0.7, 1.3)
     );
@@ -130,8 +143,8 @@ function allocateVolumes(draws, totalVolume) {
     );
 
     return groups.map((group, index) => {
-        const volume = totalVolume *
-            weights[index] / totalWeight;
+        const volume =
+            totalVolume * weights[index] / totalWeight;
 
         return {
             id: createId(),
@@ -140,13 +153,12 @@ function allocateVolumes(draws, totalVolume) {
             rarity: group.rarity,
             baseIndex: group.baseIndex,
             drawCount: group.drawCount,
-            volumePercent: volume,
-            connected: true
+            volumePercent: volume
         };
     });
 }
 
-function applyFragmentThreshold(masses, totalStoneVolume) {
+function applyFragmentThreshold(masses) {
     const retained = [];
     const discarded = [];
 
@@ -164,15 +176,16 @@ function applyFragmentThreshold(masses, totalStoneVolume) {
     return {
         retained,
         discarded,
+
         retainedVolume: retained.reduce(
             (sum, mass) => sum + mass.volumePercent,
             0
         ),
+
         discardedVolume: discarded.reduce(
             (sum, mass) => sum + mass.volumePercent,
             0
-        ),
-        originalVolume: totalStoneVolume
+        )
     };
 }
 
@@ -189,34 +202,27 @@ class JadeGenerator {
         const draws = [];
 
         for (let index = 0; index < config.drawCount; index++) {
-            const isFinalDraw = index === config.drawCount - 1;
+            const isFinalDraw =
+                index === config.drawCount - 1;
 
-            const hasGuaranteedTier = draws.some(
-                jade =>
-                    (JADE_RARITY_LEVEL[jade.rarity] ?? 0) >=
-                    JADE_RARITY_LEVEL[config.guaranteedTier]
+            const alreadyGuaranteed = hasGuaranteedJade(
+                draws,
+                config.guaranteedTier
             );
 
-            let selectedRarity;
+            // 只有最後一次判定，而且前面沒有達成保底時，
+            // 才強制抽取一般指定稀有度以上的玉石。
+            const shouldGuarantee =
+                isFinalDraw &&
+                config.guaranteedTier &&
+                !alreadyGuaranteed;
 
-            // 傳說原石每次種類抽取都有獨立的 5% 特殊玉機率。
-            if (
-                stone.rarity === "legendary" &&
-                Math.random() < config.specialChance / 100
-            ) {
-                selectedRarity = "jade_37";
-            } else {
-                const guarantee = isFinalDraw &&
-                    config.guaranteedTier &&
-                    !hasGuaranteedTier
+            const selectedRarity = pickRarity(
+                config.distribution,
+                shouldGuarantee
                     ? config.guaranteedTier
-                    : null;
-
-                selectedRarity = pickJadeRarity(
-                    config.distribution,
-                    guarantee
-                );
-            }
+                    : null
+            );
 
             if (selectedRarity === "jade_37") {
                 draws.push(JADE_TYPES.jade_37);
@@ -230,19 +236,23 @@ class JadeGenerator {
             config.volume[1]
         );
 
-        const masses = allocateVolumes(draws, totalVolume);
+        const masses = allocateVolumes(
+            draws,
+            totalVolume
+        );
 
         const fragmentResult = applyFragmentThreshold(
-            masses,
-            100
+            masses
         );
 
         return {
             stoneId: stone.id,
             stoneRarity: stone.rarity,
+
             generatedAt: new Date().toISOString(),
 
             drawCount: config.drawCount,
+
             totalJadeVolume: totalVolume,
 
             draws: draws.map(jade => ({
@@ -252,12 +262,14 @@ class JadeGenerator {
             })),
 
             masses: fragmentResult.retained,
+
             discardedMasses: fragmentResult.discarded,
 
             retainedVolume: fragmentResult.retainedVolume,
+
             discardedVolume: fragmentResult.discardedVolume,
 
-            generationVersion: 1
+            generationVersion: 2
         };
     }
 }
