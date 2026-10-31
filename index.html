@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="css/layout.css">
     <link rel="stylesheet" href="css/mobile.css">
     <link rel="stylesheet" href="css/gacha.css">
+    <link rel="stylesheet" href="css/inventory.css">
 </head>
 
 <body>
@@ -163,6 +164,141 @@
             <section id="gacha-results" class="gacha-results" hidden>
                 <h3>本次抽取結果</h3>
                 <div id="gacha-result-list" class="gacha-result-list"></div>
+            </section>
+        </section>
+
+        <!-- 原石背包 -->
+        <section id="page-inventory" class="page-section" hidden>
+            <div class="page-title">
+                <span class="section-label">STONE INVENTORY</span>
+                <h2>原石收藏室</h2>
+                <p>每一塊原石，都記錄著一次未知的發現。</p>
+            </div>
+
+            <section class="inventory-summary">
+                <div class="inventory-total">
+                    <span>原石總數</span>
+                    <strong id="inventory-total">0</strong>
+                </div>
+
+                <div class="inventory-stat">
+                    <span>尚未切割</span>
+                    <strong id="inventory-uncut">0</strong>
+                </div>
+
+                <div class="inventory-stat">
+                    <span>已切割</span>
+                    <strong id="inventory-cut">0</strong>
+                </div>
+            </section>
+
+            <section class="inventory-rarity-summary">
+                <div class="inventory-rarity-item">
+                    <span class="rarity-dot gypsy"></span>
+                    <span>吉普賽</span>
+                    <strong id="inventory-gypsy">0</strong>
+                </div>
+
+                <div class="inventory-rarity-item">
+                    <span class="rarity-dot common"></span>
+                    <span>常見</span>
+                    <strong id="inventory-common">0</strong>
+                </div>
+
+                <div class="inventory-rarity-item">
+                    <span class="rarity-dot rare"></span>
+                    <span>稀有</span>
+                    <strong id="inventory-rare">0</strong>
+                </div>
+
+                <div class="inventory-rarity-item">
+                    <span class="rarity-dot epic"></span>
+                    <span>史詩</span>
+                    <strong id="inventory-epic">0</strong>
+                </div>
+
+                <div class="inventory-rarity-item">
+                    <span class="rarity-dot legendary"></span>
+                    <span>傳說</span>
+                    <strong id="inventory-legendary">0</strong>
+                </div>
+            </section>
+
+            <section class="inventory-toolbar">
+                <div class="inventory-filter">
+                    <label for="inventory-status">狀態</label>
+                    <select id="inventory-status">
+                        <option value="all">全部原石</option>
+                        <option value="uncut">尚未切割</option>
+                        <option value="cut">已切割</option>
+                    </select>
+                </div>
+
+                <div class="inventory-filter">
+                    <label for="inventory-rarity">稀有度</label>
+                    <select id="inventory-rarity">
+                        <option value="all">全部稀有度</option>
+                        <option value="gypsy">吉普賽</option>
+                        <option value="common">常見</option>
+                        <option value="rare">稀有</option>
+                        <option value="epic">史詩</option>
+                        <option value="legendary">傳說</option>
+                    </select>
+                </div>
+
+                <div class="inventory-filter">
+                    <label for="inventory-sort">排序方式</label>
+                    <select id="inventory-sort">
+                        <option value="newest">最新取得</option>
+                        <option value="oldest">最早取得</option>
+                        <option value="rarity">稀有度優先</option>
+                    </select>
+                </div>
+            </section>
+
+            <div class="inventory-list-heading">
+                <h3>我的原石</h3>
+                <span id="inventory-result-count">0 塊原石</span>
+            </div>
+
+            <div id="inventory-list" class="inventory-grid"></div>
+
+            <section id="inventory-detail" class="inventory-detail" hidden>
+                <div class="inventory-detail-heading">
+                    <div>
+                        <span class="section-label">STONE INSPECTION</span>
+                        <h3 id="inventory-detail-title">原石資訊</h3>
+                    </div>
+
+                    <button
+                        id="inventory-detail-close"
+                        class="inventory-close-button"
+                        type="button"
+                        aria-label="關閉原石資訊"
+                    >✕</button>
+                </div>
+
+                <div class="inventory-detail-meta">
+                    <div>
+                        <span>原石稀有度</span>
+                        <strong id="detail-rarity">-</strong>
+                    </div>
+                    <div>
+                        <span>目前狀態</span>
+                        <strong id="detail-status">-</strong>
+                    </div>
+                    <div>
+                        <span>取得時間</span>
+                        <strong id="detail-date">-</strong>
+                    </div>
+                </div>
+
+                <div class="inventory-jade-heading">
+                    <h4>內部玉石分布</h4>
+                    <span id="detail-jade-volume">總量 0%</span>
+                </div>
+
+                <div id="inventory-jade-list" class="inventory-jade-list"></div>
             </section>
         </section>
 
