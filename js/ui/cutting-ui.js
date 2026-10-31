@@ -3,6 +3,9 @@ import * as THREE from "three";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
 import { cuttingSystem } from "../systems/cutting-system.js?version=6";
+import { saveManager } from "../core/save-manager.js";
+import { eventBus } from "../core/event-bus.js";
+
 import {
     testIrregularStone,
     testCube
@@ -29,16 +32,12 @@ class CuttingUI {
         this.cutPosition = 0;
         this.bladeThickness = 0.025;
 
+        this.savedCurrentResult = false;
+
         this.animationFrame = null;
         this.resizeObserver = null;
 
-        this.materials = {
-            original: null,
-            positive: null,
-            negative: null,
-            preview: null
-        };
-
+        this.materials = {};
         this.elements = {};
     }
 
@@ -102,18 +101,10 @@ class CuttingUI {
     }
 
     createScene() {
-        const viewer = this.elements.viewer;
-
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color("#20231e");
 
-        this.camera = new THREE.PerspectiveCamera(
-            45,
-            1,
-            0.1,
-            100
-        );
-
+        this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
         this.camera.position.set(4.5, 3.5, 5);
 
         this.renderer = new THREE.WebGLRenderer({
@@ -129,7 +120,7 @@ class CuttingUI {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        viewer.appendChild(this.renderer.domElement);
+        this.elements.viewer.appendChild(this.renderer.domElement);
 
         this.controls = new OrbitControls(
             this.camera,
@@ -142,43 +133,22 @@ class CuttingUI {
         this.controls.maxDistance = 12;
         this.controls.target.set(0, 0, 0);
 
-        this.scene.add(
-            new THREE.AmbientLight(0xffffff, 1.7)
-        );
+        this.scene.add(new THREE.AmbientLight(0xffffff, 1.7));
 
-        const keyLight = new THREE.DirectionalLight(
-            0xffe2a1,
-            3
-        );
-
+        const keyLight = new THREE.DirectionalLight(0xffe2a1, 3);
         keyLight.position.set(4, 6, 5);
         keyLight.castShadow = true;
         this.scene.add(keyLight);
 
-        const fillLight = new THREE.DirectionalLight(
-            0x8da58a,
-            1.4
-        );
-
+        const fillLight = new THREE.DirectionalLight(0x8da58a, 1.4);
         fillLight.position.set(-5, 2, -3);
         this.scene.add(fillLight);
 
-        const rimLight = new THREE.PointLight(
-            0xc6a45c,
-            20,
-            12
-        );
-
+        const rimLight = new THREE.PointLight(0xc6a45c, 20, 12);
         rimLight.position.set(0, 3, -4);
         this.scene.add(rimLight);
 
-        const grid = new THREE.GridHelper(
-            8,
-            16,
-            0x6b694e,
-            0x353a30
-        );
-
+        const grid = new THREE.GridHelper(8, 16, 0x6b694e, 0x353a30);
         grid.position.y = -1.55;
         this.scene.add(grid);
 
@@ -193,7 +163,6 @@ class CuttingUI {
         floor.rotation.x = -Math.PI / 2;
         floor.position.y = -1.58;
         floor.receiveShadow = true;
-
         this.scene.add(floor);
 
         this.resize();
@@ -236,12 +205,7 @@ class CuttingUI {
         for (const face of meshData.faces) {
             for (const index of face) {
                 const vertex = meshData.vertices[index];
-
-                positions.push(
-                    vertex[0],
-                    vertex[1],
-                    vertex[2]
-                );
+                positions.push(vertex[0], vertex[1], vertex[2]);
             }
         }
 
@@ -344,7 +308,6 @@ class CuttingUI {
         if (this.currentView !== "original") return;
 
         const plane = this.getCutPlane();
-
         const helper = new THREE.Group();
 
         const planeMesh = new THREE.Mesh(
@@ -412,11 +375,17 @@ class CuttingUI {
         this.elements.testCube.addEventListener("click", () => {
             this.currentMesh = structuredClone(testCube);
             this.currentResult = null;
+            this.savedCurrentResult = false;
 
             this.elements.results.hidden = true;
+            this.elements.cutButton.disabled = false;
 
             this.loadOriginalStone();
             this.showMessage("已載入標準立方體測試素材。");
+        });
+
+        document.addEventListener("cutting:page-opened", () => {
+            requestAnimationFrame(() => this.resize());
         });
     }
 
@@ -427,13 +396,83 @@ class CuttingUI {
             z: "Z 軸切割位置"
         };
 
-        this.elements.positionLabel.textContent =
-            labels[this.axis];
-
+        this.elements.positionLabel.textContent = labels[this.axis];
         this.updateCutPreview();
     }
 
+    createInventoryRecord(mesh, side, result) {
+        const now = Date.now();
+
+        return {
+            id: `cut-${now}-${side}-${Math.random().toString(36).slice(2, 8)}`,
+            name: side === "positive" ? "切割原石（正側）" : "切割原石（負側）",
+            rarity: "common",
+            status: "cut",
+            obtainedAt: now,
+
+            geometry: {
+                vertices: structuredClone(mesh.vertices),
+                faces: structuredClone(mesh.faces)
+            },
+
+            cutData: {
+                side,
+                originalVolume: result.originalVolume,
+                pieceVolume: side === "positive"
+                    ? result.positiveVolume
+                    : result.negativeVolume,
+                removedVolume: result.removedVolume,
+                bladeThickness: result.bladeThickness,
+                cutPlane: structuredClone(result.cutPlane)
+            },
+
+            jadeData: null
+        };
+    }
+
+    saveCutPieces(result) {
+        if (this.savedCurrentResult) {
+            throw new Error("本次切割結果已經加入背包，請重設工作台後再切割。");
+        }
+
+        const saveData = saveManager.getData();
+
+        if (!saveData || !Array.isArray(saveData.inventory)) {
+            throw new Error("無法取得背包存檔資料，請檢查 saveManager。");
+        }
+
+        const positiveRecord = this.createInventoryRecord(
+            result.positivePiece,
+            "positive",
+            result
+        );
+
+        const negativeRecord = this.createInventoryRecord(
+            result.negativePiece,
+            "negative",
+            result
+        );
+
+        saveData.inventory.push(positiveRecord, negativeRecord);
+
+        saveManager.save();
+
+        eventBus.emit("inventory:changed", saveData.inventory);
+
+        this.savedCurrentResult = true;
+
+        return [positiveRecord, negativeRecord];
+    }
+
     performCut() {
+        if (this.savedCurrentResult) {
+            this.showMessage(
+                "本次切割已經存入背包，請重設工作台後再進行下一次切割。",
+                true
+            );
+            return;
+        }
+
         try {
             cuttingSystem.setBladeThickness(this.bladeThickness);
 
@@ -445,15 +484,21 @@ class CuttingUI {
             this.currentResult = result;
 
             this.displayResults(result);
-
             this.elements.results.hidden = false;
 
-            this.showMessage("切割完成，兩塊原石已成功分離。");
-        } catch (error) {
-            console.error("切割失敗：", error);
+            const savedRecords = this.saveCutPieces(result);
+
+            this.elements.cutButton.disabled = true;
 
             this.showMessage(
-                `切割失敗：${error.message}`,
+                `切割完成！正側與負側兩塊原石已加入背包，目前新增 ${savedRecords.length} 筆紀錄。`
+            );
+
+        } catch (error) {
+            console.error("切割或存檔失敗：", error);
+
+            this.showMessage(
+                `切割或存檔失敗：${error.message}`,
                 true
             );
         }
@@ -564,8 +609,7 @@ class CuttingUI {
             this.currentView === "results"
         );
 
-        this.elements.viewResults.disabled =
-            !this.currentResult;
+        this.elements.viewResults.disabled = !this.currentResult;
     }
 
     showMessage(message, isError = false) {
@@ -576,6 +620,7 @@ class CuttingUI {
     resetWorkbench() {
         this.currentMesh = structuredClone(testIrregularStone);
         this.currentResult = null;
+        this.savedCurrentResult = false;
 
         this.axis = "x";
         this.cutPosition = 0;
@@ -589,6 +634,7 @@ class CuttingUI {
         this.elements.thicknessValue.textContent = "0.025";
 
         this.elements.results.hidden = true;
+        this.elements.cutButton.disabled = false;
 
         cuttingSystem.setBladeThickness(0.025);
 
@@ -601,10 +647,8 @@ class CuttingUI {
     resize() {
         if (!this.renderer || !this.camera) return;
 
-        const viewer = this.elements.viewer;
-
-        const width = viewer.clientWidth;
-        const height = viewer.clientHeight;
+        const width = this.elements.viewer.clientWidth;
+        const height = this.elements.viewer.clientHeight;
 
         if (width <= 0 || height <= 0) return;
 
@@ -615,9 +659,9 @@ class CuttingUI {
     }
 
     animate() {
-        this.animationFrame = requestAnimationFrame(
-            () => this.animate()
-        );
+        this.animationFrame = requestAnimationFrame(() => {
+            this.animate();
+        });
 
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
