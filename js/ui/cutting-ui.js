@@ -4,7 +4,7 @@ import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exampl
 
 import { cuttingSystem } from "../systems/cutting-system.js?version=6";
 import { saveManager } from "../core/save-manager.js";
-import { eventBus } from "../core/event-bus.js";
+import { inventorySystem } from "../systems/inventory.js";
 
 import {
     testIrregularStone,
@@ -405,7 +405,11 @@ class CuttingUI {
 
         return {
             id: `cut-${now}-${side}-${Math.random().toString(36).slice(2, 8)}`,
-            name: side === "positive" ? "切割原石（正側）" : "切割原石（負側）",
+
+            name: side === "positive"
+                ? "切割原石（正側）"
+                : "切割原石（負側）",
+
             rarity: "common",
             status: "cut",
             obtainedAt: now,
@@ -417,10 +421,13 @@ class CuttingUI {
 
             cutData: {
                 side,
+
                 originalVolume: result.originalVolume,
+
                 pieceVolume: side === "positive"
                     ? result.positiveVolume
                     : result.negativeVolume,
+
                 removedVolume: result.removedVolume,
                 bladeThickness: result.bladeThickness,
                 cutPlane: structuredClone(result.cutPlane)
@@ -432,14 +439,20 @@ class CuttingUI {
 
     saveCutPieces(result) {
         if (this.savedCurrentResult) {
-            throw new Error("本次切割結果已經加入背包，請重設工作台後再切割。");
+            throw new Error(
+                "本次切割結果已經加入背包，請重設工作台後再切割。"
+            );
         }
 
         const saveData = saveManager.getData();
 
         if (!saveData || !Array.isArray(saveData.inventory)) {
-            throw new Error("無法取得背包存檔資料，請檢查 saveManager。");
+            throw new Error(
+                "無法取得背包存檔資料，請檢查 saveManager。"
+            );
         }
+
+        const originalInventory = [...saveData.inventory];
 
         const positiveRecord = this.createInventoryRecord(
             result.positivePiece,
@@ -453,15 +466,29 @@ class CuttingUI {
             result
         );
 
-        saveData.inventory.push(positiveRecord, negativeRecord);
+        saveData.inventory.push(
+            positiveRecord,
+            negativeRecord
+        );
 
-        saveManager.save();
+        const saved = saveManager.save();
 
-        eventBus.emit("inventory:changed", saveData.inventory);
+        if (!saved) {
+            saveData.inventory = originalInventory;
+
+            throw new Error(
+                "存檔失敗，切割結果沒有加入背包。"
+            );
+        }
+
+        inventorySystem.notifyChanged();
 
         this.savedCurrentResult = true;
 
-        return [positiveRecord, negativeRecord];
+        return [
+            positiveRecord,
+            negativeRecord
+        ];
     }
 
     performCut() {
@@ -470,11 +497,14 @@ class CuttingUI {
                 "本次切割已經存入背包，請重設工作台後再進行下一次切割。",
                 true
             );
+
             return;
         }
 
         try {
-            cuttingSystem.setBladeThickness(this.bladeThickness);
+            cuttingSystem.setBladeThickness(
+                this.bladeThickness
+            );
 
             const result = cuttingSystem.cutStone(
                 this.currentMesh,
@@ -495,7 +525,10 @@ class CuttingUI {
             );
 
         } catch (error) {
-            console.error("切割或存檔失敗：", error);
+            console.error(
+                "切割或存檔失敗：",
+                error
+            );
 
             this.showMessage(
                 `切割或存檔失敗：${error.message}`,
@@ -525,7 +558,11 @@ class CuttingUI {
         positive.position.x = -1.35;
         negative.position.x = 1.35;
 
-        this.resultGroup.add(positive, negative);
+        this.resultGroup.add(
+            positive,
+            negative
+        );
+
         this.scene.add(this.resultGroup);
 
         this.elements.originalVolume.textContent =
@@ -609,12 +646,17 @@ class CuttingUI {
             this.currentView === "results"
         );
 
-        this.elements.viewResults.disabled = !this.currentResult;
+        this.elements.viewResults.disabled =
+            !this.currentResult;
     }
 
     showMessage(message, isError = false) {
         this.elements.message.textContent = message;
-        this.elements.message.classList.toggle("error", isError);
+
+        this.elements.message.classList.toggle(
+            "error",
+            isError
+        );
     }
 
     resetWorkbench() {
@@ -641,7 +683,9 @@ class CuttingUI {
         this.loadOriginalStone();
         this.updatePositionLabel();
 
-        this.showMessage("工作台已重設，已恢復預設原石。");
+        this.showMessage(
+            "工作台已重設，已恢復預設原石。"
+        );
     }
 
     resize() {
@@ -664,7 +708,10 @@ class CuttingUI {
         });
 
         this.controls.update();
-        this.renderer.render(this.scene, this.camera);
+        this.renderer.render(
+            this.scene,
+            this.camera
+        );
     }
 }
 
