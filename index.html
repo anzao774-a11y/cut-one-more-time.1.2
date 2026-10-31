@@ -11,32 +11,35 @@
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/layout.css">
     <link rel="stylesheet" href="css/mobile.css">
+    <link rel="stylesheet" href="css/gacha.css">
 </head>
 
 <body>
-    <div class="game-shell">
+<div class="game-shell">
 
-        <header class="topbar">
-            <div class="brand">
-                <div class="brand-mark">切</div>
-                <div>
-                    <h1>再切一刀就好</h1>
-                    <p>哪有賭徒天天輸</p>
-                </div>
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark">切</div>
+            <div>
+                <h1>再切一刀就好</h1>
+                <p>哪有賭徒天天輸</p>
             </div>
+        </div>
 
-            <div class="player-info">
-                <div class="gold-display">
-                    <span class="gold-icon">G</span>
-                    <span id="gold-balance">10,000</span>
-                </div>
-                <button class="icon-button" data-page="settings"
-                    aria-label="設定">⚙</button>
+        <div class="player-info">
+            <div class="gold-display">
+                <span class="gold-icon">G</span>
+                <span id="gold-balance">10,000</span>
             </div>
-        </header>
+            <button class="icon-button" data-page="settings"
+                aria-label="設定">⚙</button>
+        </div>
+    </header>
 
-        <main class="main-content">
+    <main class="main-content">
 
+        <!-- 工坊首頁 -->
+        <section id="page-home" class="page-section">
             <section class="welcome-section">
                 <div class="eyebrow">THE GEMSTONE WORKSHOP</div>
                 <h2>歡迎回到你的礦石工坊</h2>
@@ -66,10 +69,8 @@
 
                 <div class="workshop-actions">
                     <button class="primary-button" data-page="gacha">
-                        <span>✦</span>
-                        前往抽取原石
+                        ✦ 前往抽取原石
                     </button>
-
                     <button class="secondary-button" data-page="cutting">
                         前往切割工作台
                     </button>
@@ -110,38 +111,123 @@
                     </button>
                 </div>
             </section>
+        </section>
 
-        </main>
+        <!-- 抽卡頁面 -->
+        <section id="page-gacha" class="page-section" hidden>
+            <div class="page-title">
+                <span class="section-label">STONE GACHA</span>
+                <h2>原石抽取</h2>
+                <p>選擇一塊原石，看看裡面藏著什麼。</p>
+            </div>
 
-        <footer class="bottom-nav">
-            <button class="nav-item active" data-page="home">
-                <span>⌂</span>
-                <small>工坊</small>
-            </button>
+            <div class="gacha-machine">
+                <div class="gacha-orb">◆</div>
+                <div class="gacha-machine-title">UNIDENTIFIED STONE</div>
+                <p>每一塊原石，都有自己的命運。</p>
+            </div>
 
-            <button class="nav-item" data-page="gacha">
-                <span>✦</span>
-                <small>抽原石</small>
-            </button>
+            <div class="gacha-rates">
+                <h3>原石出現機率</h3>
+                <div class="rarity-rate-list">
+                    <div><span class="rarity-dot gypsy"></span>吉普賽 <b>55%</b></div>
+                    <div><span class="rarity-dot common"></span>常見 <b>27%</b></div>
+                    <div><span class="rarity-dot rare"></span>稀有 <b>13%</b></div>
+                    <div><span class="rarity-dot epic"></span>史詩 <b>4.5%</b></div>
+                    <div><span class="rarity-dot legendary"></span>傳說 <b>0.5%</b></div>
+                </div>
+            </div>
 
-            <button class="nav-item" data-page="cutting">
-                <span>⚒</span>
-                <small>切割</small>
-            </button>
+            <div class="pity-panel">
+                <div>
+                    <span>史詩保底</span>
+                    <strong id="epic-pity">0 / 10</strong>
+                </div>
+                <div>
+                    <span>傳說保底</span>
+                    <strong id="legendary-pity">0 / 30</strong>
+                </div>
+            </div>
 
-            <button class="nav-item" data-page="inventory">
-                <span>▤</span>
-                <small>背包</small>
-            </button>
+            <div class="gacha-actions">
+                <button id="single-pull" class="primary-button">
+                    單抽　500 G
+                </button>
+                <button id="ten-pull" class="secondary-button">
+                    十連抽　4,500 G
+                </button>
+            </div>
 
-            <button class="nav-item" data-page="dex">
-                <span>◇</span>
-                <small>圖鑑</small>
-            </button>
-        </footer>
+            <div id="gacha-message" class="gacha-message" role="status"></div>
 
-    </div>
+            <section id="gacha-results" class="gacha-results" hidden>
+                <h3>本次抽取結果</h3>
+                <div id="gacha-result-list" class="gacha-result-list"></div>
+            </section>
+        </section>
 
-    <script type="module" src="js/main.js"></script>
+        <!-- 設定頁面 -->
+        <section id="page-settings" class="page-section" hidden>
+            <div class="page-title">
+                <span class="section-label">WORKSHOP SETTINGS</span>
+                <h2>工坊設定</h2>
+                <p>管理你的工坊與特殊代碼。</p>
+            </div>
+
+            <div class="settings-panel">
+                <h3>特殊代碼</h3>
+                <p>輸入正確代碼即可領取額外金幣。</p>
+
+                <div class="cheat-input-row">
+                    <input
+                        id="cheat-code"
+                        type="text"
+                        maxlength="40"
+                        placeholder="輸入特殊代碼"
+                        autocomplete="off"
+                        spellcheck="false"
+                    >
+                    <button id="redeem-cheat" class="primary-button">
+                        兌換
+                    </button>
+                </div>
+
+                <div id="cheat-message" class="cheat-message"
+                    role="status"></div>
+            </div>
+        </section>
+
+        <!-- 尚未開放的頁面 -->
+        <section id="page-placeholder" class="page-section" hidden>
+            <div class="page-title">
+                <span class="section-label">COMING SOON</span>
+                <h2 id="placeholder-title">功能開發中</h2>
+                <p>工坊正在準備新的設備，稍後再來看看。</p>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bottom-nav">
+        <button class="nav-item active" data-page="home">
+            <span>⌂</span><small>工坊</small>
+        </button>
+        <button class="nav-item" data-page="gacha">
+            <span>✦</span><small>抽原石</small>
+        </button>
+        <button class="nav-item" data-page="cutting">
+            <span>⚒</span><small>切割</small>
+        </button>
+        <button class="nav-item" data-page="inventory">
+            <span>▤</span><small>背包</small>
+        </button>
+        <button class="nav-item" data-page="dex">
+            <span>◇</span><small>圖鑑</small>
+        </button>
+    </footer>
+
+</div>
+
+<script type="module" src="js/main.js"></script>
 </body>
 </html>
