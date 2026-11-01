@@ -1,4 +1,3 @@
-
 import { inventorySystem } from "../systems/inventory.js";
 import { eventBus } from "../core/event-bus.js";
 import { inventory3DPreview } from "./inventory-3d-preview.js";
@@ -289,7 +288,9 @@ class InventoryUI {
         const status = document.createElement("small");
 
         status.textContent =
-            STATUS_NAMES[stone.status] ?? "狀態未知";
+            stone.consumedByCut
+                ? "已作為切割素材使用"
+                : STATUS_NAMES[stone.status] ?? "狀態未知";
 
         const date = document.createElement("small");
 
@@ -335,17 +336,34 @@ class InventoryUI {
 
         panel.hidden = false;
 
-        getElement("inventory-detail-title").textContent =
-            `${RARITY_NAMES[stone.rarity] ?? "未知"}原石`;
+        const title = getElement("inventory-detail-title");
 
-        getElement("detail-rarity").textContent =
-            RARITY_NAMES[stone.rarity] ?? "未知";
+        if (title) {
+            title.textContent =
+                `${RARITY_NAMES[stone.rarity] ?? "未知"}原石`;
+        }
 
-        getElement("detail-status").textContent =
-            STATUS_NAMES[stone.status] ?? "狀態未知";
+        const rarity = getElement("detail-rarity");
 
-        getElement("detail-date").textContent =
-            formatDate(stone.obtainedAt);
+        if (rarity) {
+            rarity.textContent =
+                RARITY_NAMES[stone.rarity] ?? "未知";
+        }
+
+        const status = getElement("detail-status");
+
+        if (status) {
+            status.textContent =
+                stone.consumedByCut
+                    ? "已作為切割素材使用"
+                    : STATUS_NAMES[stone.status] ?? "狀態未知";
+        }
+
+        const date = getElement("detail-date");
+
+        if (date) {
+            date.textContent = formatDate(stone.obtainedAt);
+        }
 
         this.renderJadeData(stone.jadeData);
 
@@ -392,19 +410,27 @@ class InventoryUI {
             return false;
         }
 
+        const previousJadeData = stone.jadeData;
+
         try {
+            const savedThickness =
+                Number(stone.cutData.bladeThickness);
+
+            const bladeThickness =
+                Number.isFinite(savedThickness) &&
+                savedThickness >= 0
+                    ? savedThickness
+                    : 0.025;
+
             const split = cuttingUI.splitJadeData(
                 sourceStone,
                 {
                     cutPlane: stone.cutData.cutPlane,
-
-                    bladeThickness:
-                        Number(stone.cutData.bladeThickness) ||
-                        0.025
+                    bladeThickness
                 }
             );
 
-            const recovered = split[stone.cutSide];
+            const recovered = split?.[stone.cutSide];
 
             if (!hasValidJadeMasses(recovered)) {
                 console.warn(
@@ -421,8 +447,15 @@ class InventoryUI {
             const saved = saveManager.save();
 
             if (!saved) {
+                // 存檔失敗時，還原原本的玉料資料。
+                if (previousJadeData === undefined) {
+                    delete stone.jadeData;
+                } else {
+                    stone.jadeData = previousJadeData;
+                }
+
                 console.warn(
-                    "玉料資料已補回記憶體，但存檔未成功。",
+                    "玉料資料補回存檔失敗，已還原原本資料。",
                     stone.id
                 );
 
@@ -438,6 +471,12 @@ class InventoryUI {
             return true;
 
         } catch (error) {
+            if (previousJadeData === undefined) {
+                delete stone.jadeData;
+            } else {
+                stone.jadeData = previousJadeData;
+            }
+
             console.warn(
                 "舊切割紀錄的玉料資料補回失敗：",
                 error
@@ -774,17 +813,34 @@ class InventoryUI {
 
         panel.hidden = false;
 
-        getElement("inventory-detail-title").textContent =
-            `${RARITY_NAMES[stone.rarity] ?? "未知"}原石`;
+        const title = getElement("inventory-detail-title");
 
-        getElement("detail-rarity").textContent =
-            RARITY_NAMES[stone.rarity] ?? "未知";
+        if (title) {
+            title.textContent =
+                `${RARITY_NAMES[stone.rarity] ?? "未知"}原石`;
+        }
 
-        getElement("detail-status").textContent =
-            STATUS_NAMES[stone.status] ?? "狀態未知";
+        const rarity = getElement("detail-rarity");
 
-        getElement("detail-date").textContent =
-            formatDate(stone.obtainedAt);
+        if (rarity) {
+            rarity.textContent =
+                RARITY_NAMES[stone.rarity] ?? "未知";
+        }
+
+        const status = getElement("detail-status");
+
+        if (status) {
+            status.textContent =
+                stone.consumedByCut
+                    ? "已作為切割素材使用"
+                    : STATUS_NAMES[stone.status] ?? "狀態未知";
+        }
+
+        const date = getElement("detail-date");
+
+        if (date) {
+            date.textContent = formatDate(stone.obtainedAt);
+        }
 
         this.renderJadeData(stone.jadeData);
 
