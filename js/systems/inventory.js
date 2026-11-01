@@ -32,23 +32,23 @@ class InventorySystem {
         );
     }
 
-    // 可送往工作台的素材：
-    // 1. 尚未切割且幾何資料有效的原石。
-    // 2. 尚未被再次切割消耗，且幾何資料有效的切割產物。
     getCuttable() {
         return this.getAll().filter(stone => {
             if (!stone || !stone.id) {
                 return false;
             }
 
+            // 已被再次切割的素材不能重複使用。
             if (stone.consumedByCut === true) {
                 return false;
             }
 
+            // 一般未切割原石。
             if (stone.status === "uncut") {
                 return this.hasValidGeometry(stone);
             }
 
+            // 切割產物必須具有來源紀錄與切割側資訊。
             const isCutPiece =
                 stone.status === "cut" &&
                 Boolean(stone.sourceStoneId) &&
