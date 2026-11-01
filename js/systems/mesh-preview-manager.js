@@ -1,3 +1,4 @@
+
 import * as THREE from "three";
 import { meshGeometryUtils } from "./mesh-geometry-utils.js";
 import { meshThreeAdapter } from "./mesh-three-adapter.js";
@@ -23,11 +24,6 @@ class MeshPreviewManager {
 
     /**
      * 建立一組預覽模型
-     *
-     * @param {string} id 預覽識別碼
-     * @param {Object} stoneMesh 原石幾何資料
-     * @param {Array} includedMeshes 內部模型資料
-     * @param {Object} options 顯示設定
      */
     createPreview(id, stoneMesh, includedMeshes = [], options = {}) {
         if (!id) {
@@ -42,7 +38,13 @@ class MeshPreviewManager {
             throw new Error("內部模型資料必須是陣列");
         }
 
-        const center = meshGeometryUtils.getBounds(stoneMesh).center;
+        const bounds = meshGeometryUtils.getBounds(stoneMesh);
+
+        if (!bounds?.center) {
+            throw new Error("無法取得原石中心位置");
+        }
+
+        const center = bounds.center;
 
         const root = new THREE.Group();
         root.name = `preview-root-${id}`;
@@ -125,7 +127,7 @@ class MeshPreviewManager {
                 -center.z
             );
 
-            // 先成功建立新預覽，再釋放舊預覽。
+            // 新預覽建立成功後才替換舊預覽。
             this.disposePreview(id);
             this.previews.set(id, preview);
 
@@ -168,7 +170,7 @@ class MeshPreviewManager {
      * rotation：弧度
      * scale：縮放比例
      */
-    applyPlacement(object, placement) {
+    applyPlacement(object, placement = {}) {
         const position = placement.position || [0, 0, 0];
         const rotation = placement.rotation || [0, 0, 0];
         const scale = placement.scale ?? 1;
@@ -227,37 +229,22 @@ class MeshPreviewManager {
         object.updateMatrixWorld(true);
     }
 
-    /**
-     * 取得預覽資料
-     */
     getPreview(id) {
         return this.previews.get(id) || null;
     }
 
-    /**
-     * 取得原石模型
-     */
     getStoneObject(id) {
         return this.getPreview(id)?.stoneObject || null;
     }
 
-    /**
-     * 取得內部模型群組
-     */
     getIncludedGroup(id) {
         return this.getPreview(id)?.includedGroup || null;
     }
 
-    /**
-     * 取得預覽根物件
-     */
     getRoot(id) {
         return this.getPreview(id)?.root || null;
     }
 
-    /**
-     * 設定內部模型顯示狀態
-     */
     setInclusionsVisible(id, visible) {
         const preview = this.getPreview(id);
 
@@ -269,13 +256,10 @@ class MeshPreviewManager {
         return true;
     }
 
-    /**
-     * 設定原石顯示狀態
-     */
     setStoneVisible(id, visible) {
         const preview = this.getPreview(id);
 
-        if (!preview || !preview.stoneObject) {
+        if (!preview?.stoneObject) {
             return false;
         }
 
@@ -293,15 +277,17 @@ class MeshPreviewManager {
             return false;
         }
 
+        const numericOpacity = Number(opacity);
+
+        if (!Number.isFinite(numericOpacity)) {
+            return false;
+        }
+
         const value = THREE.MathUtils.clamp(
-            Number(opacity),
+            numericOpacity,
             0,
             1
         );
-
-        if (!Number.isFinite(value)) {
-            return false;
-        }
 
         preview.stoneObject.traverse(object => {
             if (!object.isMesh || !object.material) {
@@ -313,6 +299,10 @@ class MeshPreviewManager {
                 : [object.material];
 
             for (const material of materials) {
+                if (!material) {
+                    continue;
+                }
+
                 material.transparent = value < 1;
                 material.opacity = value;
                 material.depthWrite = value >= 1;
@@ -331,11 +321,8 @@ class MeshPreviewManager {
     setPreviewPosition(id, position) {
         const preview = this.getPreview(id);
 
-        if (!preview) {
-            return false;
-        }
-
         if (
+            !preview ||
             !Array.isArray(position) ||
             position.length !== 3 ||
             !position.every(Number.isFinite)
@@ -401,9 +388,17 @@ class MeshPreviewManager {
     }
 
     /**
-     * 清理 Three.js 物件資源
+     * 清理預覽物件資源
      *
-     * 使用 Set 避免同一個資源被重複釋放。
+     * 幾何與材質由預覽模型建立流程建立，
+     * 因此在預覽結束時釋放。
+     *
+     * 貼圖可能被其他材質共用，
+     * 預設不主動釋放貼圖。
+     *
+     * 若未來確定某張貼圖專屬於預覽，
+     * 可在建立時設定：
+     * texture.userData.previewOwned = true
      */
     disposeObjectResources(object) {
         if (!object?.traverse) {
@@ -412,10 +407,10 @@ class MeshPreviewManager {
 
         const geometries = new Set();
         const materials = new Set();
-        const textures = new Set();
+        const ownedTextures = new Set();
 
         object.traverse(child => {
-            if (child.geometry) {
+            if (child.geometry?.dispose) {
                 geometries.add(child.geometry);
             }
 
@@ -434,26 +429,37 @@ class MeshPreviewManager {
 
                 materials.add(material);
 
-                // 收集材質直接持有的貼圖。
+                // 只收集明確標記為預覽專屬的貼圖。
                 for (const value of Object.values(material)) {
-                    if (value?.isTexture) {
-                        textures.add(value);
+                    if (
+                        value?.isTexture &&
+                        value.userData?.previewOwned === true
+                    ) {
+                        ownedTextures.add(value);
                     }
                 }
 
-                // 收集 ShaderMaterial uniforms 中的貼圖。
+                // 支援 ShaderMaterial uniforms。
                 if (material.uniforms) {
                     for (const uniform of Object.values(
                         material.uniforms
                     )) {
                         const value = uniform?.value;
 
-                        if (value?.isTexture) {
-                            textures.add(value);
-                        } else if (Array.isArray(value)) {
+                        if (
+                            value?.isTexture &&
+                            value.userData?.previewOwned === true
+                        ) {
+                            ownedTextures.add(value);
+                        }
+
+                        if (Array.isArray(value)) {
                             for (const item of value) {
-                                if (item?.isTexture) {
-                                    textures.add(item);
+                                if (
+                                    item?.isTexture &&
+                                    item.userData?.previewOwned === true
+                                ) {
+                                    ownedTextures.add(item);
                                 }
                             }
                         }
@@ -470,13 +476,13 @@ class MeshPreviewManager {
             material.dispose();
         }
 
-        for (const texture of textures) {
+        for (const texture of ownedTextures) {
             texture.dispose();
         }
     }
 
     /**
-     * 釋放單組預覽
+     * 釋放單組預覽物件
      */
     disposePreviewObject(preview) {
         if (!preview) {
@@ -524,16 +530,10 @@ class MeshPreviewManager {
         this.previews.clear();
     }
 
-    /**
-     * 取得目前預覽數量
-     */
     getPreviewCount() {
         return this.previews.size;
     }
 
-    /**
-     * 檢查指定預覽是否存在
-     */
     hasPreview(id) {
         return this.previews.has(id);
     }
