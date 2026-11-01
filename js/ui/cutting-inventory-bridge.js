@@ -1,3 +1,4 @@
+
 import { inventorySystem } from "../systems/inventory.js";
 import { inventoryUI } from "./inventory-ui.js";
 import { cuttingUI } from "./cutting-ui.js";
@@ -47,7 +48,6 @@ class CuttingInventoryBridge {
             if (!select) return;
 
             const previousId = cuttingUI.currentStoneId;
-
             const stones = inventorySystem.getCuttable();
 
             select.replaceChildren();
@@ -128,14 +128,14 @@ class CuttingInventoryBridge {
             const originalStatus = stone.status;
 
             try {
-                // 暫時讓原有選取流程接受切割產物。
+                // 暫時開放原本已切割的產物供選取。
                 stone.status = "uncut";
 
                 return this.originalMethods
                     .selectInventoryStone(stoneId);
 
             } finally {
-                // 不永久改變背包中的切割狀態。
+                // 選取完成後恢復背包中的真實狀態。
                 stone.status = originalStatus;
             }
         };
@@ -143,14 +143,16 @@ class CuttingInventoryBridge {
 
 
     // ==========================================
-    // 允許再次切割
+    // 切割與存檔
     // ==========================================
 
     patchCutting() {
         this.originalMethods.saveCutPieces =
             cuttingUI.saveCutPieces.bind(cuttingUI);
 
-        cuttingUI.saveCutPieces = result => {
+        cuttingUI.saveCutPieces = (...args) => {
+            const result = args[0];
+
             const sourceStone =
                 inventorySystem.getById(
                     cuttingUI.currentStoneId
@@ -160,8 +162,9 @@ class CuttingInventoryBridge {
                 ...(sourceStone?.cutResultIds ?? [])
             ];
 
+            // 保留原本的所有參數，包含預先計算的 jadeSplit。
             const records =
-                this.originalMethods.saveCutPieces(result);
+                this.originalMethods.saveCutPieces(...args);
 
             if (sourceStone && previousIds.length > 0) {
                 const currentIds =
@@ -200,16 +203,31 @@ class CuttingInventoryBridge {
                 return this.originalMethods.performCut();
             }
 
+            const originalStatus = stone.status;
+            const wasAlreadySaved =
+                cuttingUI.savedCurrentResult;
+
             try {
-                // 原有切割流程只接受 uncut。
-                // 在同步執行期間暫時開放切割產物。
+                // 暫時開放切割產物進入原本的切割流程。
                 stone.status = "uncut";
 
                 return this.originalMethods.performCut();
 
             } finally {
-                // 無論切割成功或失敗，都維持原本的 cut 狀態。
-                stone.status = "cut";
+                const cutSucceeded =
+                    !wasAlreadySaved &&
+                    cuttingUI.savedCurrentResult === true;
+
+                /*
+                 * 成功時由原本的 saveCutPieces
+                 * 負責設定狀態與保存結果。
+                 *
+                 * 失敗或提早中止時，恢復原始狀態，
+                 * 避免把未成功切割的石頭錯誤標記。
+                 */
+                if (!cutSucceeded) {
+                    stone.status = originalStatus;
+                }
 
                 saveManager.save();
 
@@ -230,8 +248,6 @@ class CuttingInventoryBridge {
         cuttingUI.resetWorkbench = () => {
             this.originalMethods.resetWorkbench();
 
-            // 如果沒有未切割原石，原本流程會載入測試素材。
-            // 改為優先載入背包中仍可繼續切割的產物。
             if (cuttingUI.isTestMode) {
                 const stones =
                     inventorySystem.getCuttable();
@@ -273,6 +289,10 @@ class CuttingInventoryBridge {
         };
     }
 
+
+    // ==========================================
+    // 送往切割工作台按鈕
+    // ==========================================
 
     renderWorkbenchButton(stoneId) {
         const panel =
