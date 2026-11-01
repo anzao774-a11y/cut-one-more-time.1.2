@@ -27,6 +27,9 @@ class CuttingUI {
         this.resultGroup = null;
         this.previewGroup = null;
 
+        this.gridHelper = null;
+        this.floorMesh = null;
+
         this.currentMesh = null;
         this.currentStoneId = null;
         this.currentStone = null;
@@ -47,6 +50,8 @@ class CuttingUI {
 
         this.materials = {};
         this.elements = {};
+
+        this.boundPageOpened = null;
     }
 
 
@@ -123,7 +128,15 @@ class CuttingUI {
     createStoneSelector() {
         const viewer = this.elements.viewer;
 
-        if (!viewer) return;
+        if (!viewer || !viewer.parentElement) return;
+
+        const existing = document.getElementById(
+            "cutting-stone-selector"
+        );
+
+        if (existing) {
+            existing.remove();
+        }
 
         const wrapper = document.createElement("div");
 
@@ -144,6 +157,7 @@ class CuttingUI {
         const label = document.createElement("label");
 
         label.textContent = "選擇待切割原石";
+
         label.style.cssText = `
             color: #d5c59a;
             font-size: 13px;
@@ -194,57 +208,65 @@ class CuttingUI {
     // 可切割物件判斷
     // ==========================================
 
+    isValidGeometry(geometry, minimumVertices = 4) {
+        if (
+            !geometry ||
+            !Array.isArray(geometry.vertices) ||
+            !Array.isArray(geometry.faces) ||
+            geometry.vertices.length < minimumVertices ||
+            geometry.faces.length < 4
+        ) {
+            return false;
+        }
+
+        for (const vertex of geometry.vertices) {
+            if (
+                !Array.isArray(vertex) ||
+                vertex.length !== 3 ||
+                !vertex.every(Number.isFinite)
+            ) {
+                return false;
+            }
+        }
+
+        for (const face of geometry.faces) {
+            if (
+                !Array.isArray(face) ||
+                face.length !== 3 ||
+                !face.every(index =>
+                    Number.isInteger(index) &&
+                    index >= 0 &&
+                    index < geometry.vertices.length
+                ) ||
+                new Set(face).size !== 3
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+
     isCuttableStone(stone) {
         if (
             !stone ||
             !stone.id ||
-            !stone.geometry ||
-            stone.consumedByCut === true
+            stone.consumedByCut === true ||
+            !this.isValidGeometry(stone.geometry)
         ) {
             return false;
         }
 
-        const geometry = stone.geometry;
-
-        const hasValidGeometry =
-            Array.isArray(geometry.vertices) &&
-            Array.isArray(geometry.faces) &&
-            geometry.vertices.length >= 4 &&
-            geometry.faces.length >= 4 &&
-            geometry.vertices.every(vertex =>
-                Array.isArray(vertex) &&
-                vertex.length === 3 &&
-                vertex.every(Number.isFinite)
-            ) &&
-            geometry.faces.every(face =>
-                Array.isArray(face) &&
-                face.length === 3 &&
-                face.every(index =>
-                    Number.isInteger(index) &&
-                    index >= 0 &&
-                    index < geometry.vertices.length
-                )
-            );
-
-        if (!hasValidGeometry) {
-            return false;
-        }
-
-        // 尚未切割的原石。
         if (stone.status === "uncut") {
             return true;
         }
 
-        // 已切割產物也允許再次切割。
-        if (
+        return (
             stone.status === "cut" &&
-            stone.sourceStoneId &&
-            stone.cutSide
-        ) {
-            return true;
-        }
-
-        return false;
+            Boolean(stone.sourceStoneId) &&
+            Boolean(stone.cutSide)
+        );
     }
 
 
@@ -255,7 +277,6 @@ class CuttingUI {
 
         const previousId = this.currentStoneId;
 
-        // 使用可切割清單，包含原始原石與有效切割產物。
         const stones = inventorySystem.getCuttable()
             .filter(stone => this.isCuttableStone(stone));
 
@@ -322,22 +343,16 @@ class CuttingUI {
 
 
     getStoneGeometry(stone) {
-        if (!stone || !stone.geometry) {
-            return null;
-        }
-
-        const geometry = stone.geometry;
-
         if (
-            !Array.isArray(geometry.vertices) ||
-            !Array.isArray(geometry.faces)
+            !stone ||
+            !this.isValidGeometry(stone.geometry)
         ) {
             return null;
         }
 
         return {
-            vertices: structuredClone(geometry.vertices),
-            faces: structuredClone(geometry.faces)
+            vertices: structuredClone(stone.geometry.vertices),
+            faces: structuredClone(stone.geometry.faces)
         };
     }
 
@@ -414,6 +429,10 @@ class CuttingUI {
                 ? `目前選擇：${stone.name ?? "未命名素材"}｜切割產物｜可再次切割`
                 : `目前選擇：${stone.name ?? "未命名原石"}｜${rarityName}`
         );
+
+        if (this.elements.stoneSelect) {
+            this.elements.stoneSelect.value = stone.id;
+        }
 
         return true;
     }
@@ -503,18 +522,18 @@ class CuttingUI {
 
         this.scene.add(rimLight);
 
-        const grid = new THREE.GridHelper(
+        this.gridHelper = new THREE.GridHelper(
             8,
             16,
             0x6b694e,
             0x353a30
         );
 
-        grid.position.y = -1.55;
+        this.gridHelper.position.y = -1.55;
 
-        this.scene.add(grid);
+        this.scene.add(this.gridHelper);
 
-        const floor = new THREE.Mesh(
+        this.floorMesh = new THREE.Mesh(
             new THREE.PlaneGeometry(20, 20),
             new THREE.MeshStandardMaterial({
                 color: 0x20231e,
@@ -522,11 +541,11 @@ class CuttingUI {
             })
         );
 
-        floor.rotation.x = -Math.PI / 2;
-        floor.position.y = -1.58;
-        floor.receiveShadow = true;
+        this.floorMesh.rotation.x = -Math.PI / 2;
+        this.floorMesh.position.y = -1.58;
+        this.floorMesh.receiveShadow = true;
 
-        this.scene.add(floor);
+        this.scene.add(this.floorMesh);
 
         this.resize();
     }
@@ -565,24 +584,12 @@ class CuttingUI {
                 side: THREE.DoubleSide,
                 depthWrite: false
             });
-
-        this.materials.jade =
-            new THREE.MeshStandardMaterial({
-                color: 0x3f9b70,
-                roughness: 0.2,
-                metalness: 0.03,
-                side: THREE.DoubleSide
-            });
     }
 
 
     meshToGeometry(meshData) {
-        if (
-            !meshData ||
-            !Array.isArray(meshData.vertices) ||
-            !Array.isArray(meshData.faces)
-        ) {
-            throw new Error("原石幾何資料格式錯誤");
+        if (!this.isValidGeometry(meshData, 3)) {
+            throw new Error("模型幾何資料格式錯誤");
         }
 
         const positions = [];
@@ -590,14 +597,6 @@ class CuttingUI {
         for (const face of meshData.faces) {
             for (const index of face) {
                 const vertex = meshData.vertices[index];
-
-                if (
-                    !vertex ||
-                    vertex.length !== 3 ||
-                    !vertex.every(Number.isFinite)
-                ) {
-                    throw new Error("原石頂點資料無效");
-                }
 
                 positions.push(
                     vertex[0],
@@ -637,16 +636,65 @@ class CuttingUI {
     }
 
 
+    getJadeColor(jadeType) {
+        const colors = {
+            agate: "#c47c62",
+            jasper: "#a64f3d",
+            quartz: "#d8d8dc",
+            commercial_nephrite: "#91a98c",
+            amethyst: "#9165c4",
+            citrine: "#d6a83e",
+            garnet: "#8c263d",
+            lapis_lazuli: "#244a9b",
+            turquoise: "#36a8a5",
+            aquamarine: "#78c6d4",
+            peridot: "#91b83e",
+            spinel: "#bb536b",
+            tourmaline: "#4b9973",
+            jadeite: "#70a982",
+            moonstone: "#b9c6d7",
+            emerald: "#16834c",
+            ruby: "#bd263e",
+            sapphire: "#315eb5",
+            precious_opal: "#9bb8c1",
+            imperial_green_jadeite: "#087a3c",
+            alexandrite: "#426e78",
+            black_opal: "#30343d",
+            pigeon_blood_ruby: "#a40d2b",
+            jade_37: "#719e80"
+        };
+
+        return colors[jadeType] ?? "#3f9b70";
+    }
+
+
     createJadeMesh(mass) {
-        if (!mass?.geometry) return null;
+        if (
+            !mass?.geometry ||
+            !this.isValidGeometry(mass.geometry)
+        ) {
+            throw new Error(
+                `玉料「${mass?.name ?? "未命名"}」缺少有效幾何資料。`
+            );
+        }
+
+        const material = new THREE.MeshStandardMaterial({
+            color: this.getJadeColor(mass.jadeType),
+            roughness: 0.2,
+            metalness: 0.03,
+            side: THREE.DoubleSide
+        });
 
         const jade = new THREE.Mesh(
             this.meshToGeometry(mass.geometry),
-            this.materials.jade
+            material
         );
 
         jade.name = mass.name ?? "內部玉石";
+
         jade.userData.jadeType = mass.jadeType ?? null;
+        jade.userData.ownsMaterial = true;
+
         jade.castShadow = true;
         jade.receiveShadow = true;
 
@@ -662,6 +710,20 @@ class CuttingUI {
         group.traverse(object => {
             if (object.isMesh && object.geometry) {
                 object.geometry.dispose();
+            }
+
+            if (
+                object.isMesh &&
+                object.material &&
+                object.userData?.ownsMaterial
+            ) {
+                const materials = Array.isArray(object.material)
+                    ? object.material
+                    : [object.material];
+
+                for (const material of materials) {
+                    material.dispose();
+                }
             }
         });
     }
@@ -805,7 +867,6 @@ class CuttingUI {
             );
         };
 
-
         bind(
             this.elements.stoneSelect,
             "change",
@@ -818,7 +879,6 @@ class CuttingUI {
             }
         );
 
-
         bind(
             this.elements.axis,
             "change",
@@ -829,7 +889,6 @@ class CuttingUI {
                 this.updateCutPreview();
             }
         );
-
 
         bind(
             this.elements.position,
@@ -848,7 +907,6 @@ class CuttingUI {
             }
         );
 
-
         bind(
             this.elements.thickness,
             "input",
@@ -864,7 +922,6 @@ class CuttingUI {
             }
         );
 
-
         bind(
             this.elements.cutButton,
             "click",
@@ -872,7 +929,6 @@ class CuttingUI {
                 this.performCut();
             }
         );
-
 
         bind(
             this.elements.resetButton,
@@ -882,7 +938,6 @@ class CuttingUI {
             }
         );
 
-
         bind(
             this.elements.viewOriginal,
             "click",
@@ -890,7 +945,6 @@ class CuttingUI {
                 this.showOriginal();
             }
         );
-
 
         bind(
             this.elements.viewResults,
@@ -900,7 +954,6 @@ class CuttingUI {
             }
         );
 
-
         bind(
             this.elements.testCube,
             "click",
@@ -909,14 +962,15 @@ class CuttingUI {
             }
         );
 
+        this.boundPageOpened = () => {
+            requestAnimationFrame(() => {
+                this.resize();
+            });
+        };
 
         document.addEventListener(
             "cutting:page-opened",
-            () => {
-                requestAnimationFrame(() => {
-                    this.resize();
-                });
-            }
+            this.boundPageOpened
         );
     }
 
@@ -977,11 +1031,10 @@ class CuttingUI {
 
 
     // ==========================================
-    // 內部玉石定位與切割
+    // 內部玉石定位
     // ==========================================
 
     createStableJadePlacement(sourceStone, mass, index, hostBounds) {
-        // 已經定位過的玉料必須沿用原本幾何座標。
         if (mass.placementApplied && mass.geometry) {
             return {
                 geometry: structuredClone(mass.geometry),
@@ -989,7 +1042,14 @@ class CuttingUI {
             };
         }
 
+        if (!this.isValidGeometry(mass.geometry)) {
+            throw new Error(
+                `玉料「${mass.name ?? index}」原始幾何資料無效。`
+            );
+        }
+
         const seedText = String(mass.id ?? index);
+
         let seed = 2166136261;
 
         for (let i = 0; i < seedText.length; i++) {
@@ -999,17 +1059,35 @@ class CuttingUI {
 
         const random = () => {
             seed += 0x6D2B79F5;
+
             let value = seed;
-            value = Math.imul(value ^ (value >>> 15), value | 1);
-            value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-            return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+
+            value = Math.imul(
+                value ^ (value >>> 15),
+                value | 1
+            );
+
+            value ^= value + Math.imul(
+                value ^ (value >>> 7),
+                value | 61
+            );
+
+            return (
+                (value ^ (value >>> 14)) >>> 0
+            ) / 4294967296;
         };
 
-        const volume = Math.max(0, Number(mass.volumePercent) || 0);
+        const volume = Math.max(
+            0,
+            Number(mass.volumePercent) || 0
+        );
 
         const fitRatio = Math.min(
             0.42,
-            Math.max(0.18, 0.16 + Math.sqrt(volume / 100) * 0.42)
+            Math.max(
+                0.18,
+                0.16 + Math.sqrt(volume / 100) * 0.42
+            )
         );
 
         const normalizedPosition = [
@@ -1035,28 +1113,56 @@ class CuttingUI {
             }
         );
 
+        if (
+            !placed ||
+            !this.isValidGeometry(placed.mesh)
+        ) {
+            throw new Error(
+                `玉料「${mass.name ?? index}」定位後的幾何資料無效。`
+            );
+        }
+
         return {
             geometry: placed.mesh,
-            placement: placed.placement
+            placement: placed.placement ?? null
         };
     }
 
+
+    // ==========================================
+    // 玉料切割
+    // ==========================================
 
     splitJadeData(sourceStone, cutResult) {
         const sourceData = sourceStone?.jadeData;
 
         if (
             !sourceData ||
-            !Array.isArray(sourceData.masses) ||
-            !sourceStone?.geometry ||
-            !cutResult?.cutPlane ||
-            !Array.isArray(cutResult.cutPlane.normal) ||
-            !Array.isArray(cutResult.cutPlane.point)
+            !Array.isArray(sourceData.masses)
         ) {
             return {
                 positive: null,
                 negative: null
             };
+        }
+
+        if (
+            !sourceStone?.geometry ||
+            !cutResult?.cutPlane ||
+            !Array.isArray(cutResult.cutPlane.normal) ||
+            !Array.isArray(cutResult.cutPlane.point)
+        ) {
+            throw new Error(
+                "玉料切割缺少來源模型或切割平面資料。"
+            );
+        }
+
+        if (
+            !this.isValidGeometry(sourceStone.geometry)
+        ) {
+            throw new Error(
+                "來源原石幾何資料無效，無法切割內部玉料。"
+            );
         }
 
         const normal = cutResult.cutPlane.normal;
@@ -1068,12 +1174,7 @@ class CuttingUI {
             !normal.every(Number.isFinite) ||
             !point.every(Number.isFinite)
         ) {
-            console.error("切割平面資料無效");
-
-            return {
-                positive: null,
-                negative: null
-            };
+            throw new Error("切割平面資料無效。");
         }
 
         const normalLength = Math.hypot(
@@ -1083,15 +1184,9 @@ class CuttingUI {
         );
 
         if (normalLength <= 1e-10) {
-            console.error("切割平面法線長度無效");
-
-            return {
-                positive: null,
-                negative: null
-            };
+            throw new Error("切割平面法線長度無效。");
         }
 
-        // 統一法線長度，避免距離計算受到法線比例影響。
         const unitNormal = normal.map(
             value => value / normalLength
         );
@@ -1110,6 +1205,10 @@ class CuttingUI {
             sourceStone.geometry
         );
 
+        if (!hostBounds) {
+            throw new Error("無法取得來源原石的幾何邊界。");
+        }
+
         const positivePlane = {
             point: point.map((value, axis) =>
                 value + unitNormal[axis] * halfThickness
@@ -1126,73 +1225,25 @@ class CuttingUI {
 
         const positiveMasses = [];
         const negativeMasses = [];
-
-
-        // ======================================
-        // 幾何資料驗證
-        // ======================================
-
-        const isValidGeometry = geometry => {
-            if (
-                !geometry ||
-                !Array.isArray(geometry.vertices) ||
-                !Array.isArray(geometry.faces) ||
-                geometry.vertices.length < 4 ||
-                geometry.faces.length < 4
-            ) {
-                return false;
-            }
-
-            for (const vertex of geometry.vertices) {
-                if (
-                    !Array.isArray(vertex) ||
-                    vertex.length !== 3 ||
-                    !vertex.every(Number.isFinite)
-                ) {
-                    return false;
-                }
-            }
-
-            for (const face of geometry.faces) {
-                if (
-                    !Array.isArray(face) ||
-                    face.length !== 3 ||
-                    !face.every(index =>
-                        Number.isInteger(index) &&
-                        index >= 0 &&
-                        index < geometry.vertices.length
-                    )
-                ) {
-                    return false;
-                }
-            }
-
-            return true;
-        };
-
-
-        // ======================================
-        // 計算玉石體積
-        // ======================================
+        const discardedMasses = [];
 
         const getVolume = geometry => {
-            if (!isValidGeometry(geometry)) {
-                return 0;
+            if (!this.isValidGeometry(geometry)) {
+                throw new Error("玉料幾何資料無效，無法計算體積。");
             }
 
-            try {
-                const volume = cuttingSystem.calculateVolume(
-                    geometry
-                );
+            const volume = cuttingSystem.calculateVolume(
+                geometry
+            );
 
-                return Number.isFinite(volume)
-                    ? Math.abs(volume)
-                    : 0;
-
-            } catch (error) {
-                console.warn("玉石體積計算失敗：", error);
-                return 0;
+            if (
+                !Number.isFinite(volume) ||
+                Math.abs(volume) <= 1e-10
+            ) {
+                throw new Error("玉料體積無效或接近零。");
             }
+
+            return Math.abs(volume);
         };
 
 
@@ -1208,13 +1259,10 @@ class CuttingUI {
             placement,
             index
         ) => {
-            if (!isValidGeometry(geometry)) {
-                console.warn(
-                    `${side} 側玉石幾何資料無效：`,
-                    mass.name
+            if (!this.isValidGeometry(geometry)) {
+                throw new Error(
+                    `${side} 側玉料「${mass.name ?? index}」裁切後幾何資料無效。`
                 );
-
-                return false;
             }
 
             const volume = getVolume(geometry);
@@ -1223,18 +1271,22 @@ class CuttingUI {
                 volume <= 1e-10 ||
                 originalVolume <= 1e-10
             ) {
-                console.warn(
-                    `${side} 側玉石體積無效：`,
-                    mass.name
+                throw new Error(
+                    `${side} 側玉料「${mass.name ?? index}」體積無效。`
                 );
-
-                return false;
             }
 
-            const ratio = Math.min(
-                1,
-                volume / originalVolume
-            );
+            const ratio = volume / originalVolume;
+
+            if (
+                !Number.isFinite(ratio) ||
+                ratio <= 0 ||
+                ratio > 1.0001
+            ) {
+                throw new Error(
+                    `${side} 側玉料「${mass.name ?? index}」體積比例異常。`
+                );
+            }
 
             const record = {
                 ...mass,
@@ -1253,7 +1305,8 @@ class CuttingUI {
                 placement: placement ?? null,
 
                 volumePercent:
-                    (Number(mass.volumePercent) || 0) * ratio
+                    (Number(mass.volumePercent) || 0) *
+                    Math.min(1, ratio)
             };
 
             if (side === "positive") {
@@ -1262,7 +1315,7 @@ class CuttingUI {
                 negativeMasses.push(record);
             }
 
-            return true;
+            return record;
         };
 
 
@@ -1270,9 +1323,13 @@ class CuttingUI {
         // 逐一處理原石內部玉料
         // ======================================
 
-        sourceData.masses.forEach((mass, index) => {
+        for (let index = 0; index < sourceData.masses.length; index++) {
+            const mass = sourceData.masses[index];
+
             if (!mass?.geometry) {
-                return;
+                throw new Error(
+                    `第 ${index + 1} 筆玉料缺少幾何資料，已中止切割以避免資料遺失。`
+                );
             }
 
             let placed;
@@ -1284,45 +1341,23 @@ class CuttingUI {
                     index,
                     hostBounds
                 );
-
             } catch (error) {
-                console.warn(
-                    "玉石定位失敗：",
-                    mass.name,
-                    error
+                throw new Error(
+                    `玉料「${mass.name ?? index + 1}」定位失敗：${error.message}`
                 );
-
-                return;
             }
 
             const jadeGeometry = placed?.geometry;
 
-            if (!isValidGeometry(jadeGeometry)) {
-                console.warn(
-                    "玉石定位後的幾何資料無效：",
-                    mass.name
+            if (!this.isValidGeometry(jadeGeometry)) {
+                throw new Error(
+                    `玉料「${mass.name ?? index + 1}」定位後的幾何資料無效。`
                 );
-
-                return;
             }
 
             const originalVolume = getVolume(
                 jadeGeometry
             );
-
-            if (originalVolume <= 1e-10) {
-                console.warn(
-                    "原始玉石體積無效：",
-                    mass.name
-                );
-
-                return;
-            }
-
-
-            // ==================================
-            // 計算玉石頂點與切割面的距離
-            // ==================================
 
             let minDistance = Infinity;
             let maxDistance = -Infinity;
@@ -1333,19 +1368,19 @@ class CuttingUI {
                     (vertex[1] - point[1]) * unitNormal[1] +
                     (vertex[2] - point[2]) * unitNormal[2];
 
-                if (distance < minDistance) {
-                    minDistance = distance;
-                }
+                minDistance = Math.min(
+                    minDistance,
+                    distance
+                );
 
-                if (distance > maxDistance) {
-                    maxDistance = distance;
-                }
+                maxDistance = Math.max(
+                    maxDistance,
+                    distance
+                );
             }
 
 
-            // ==================================
-            // 完全位於正側
-            // ==================================
+            // 完全位於正側。
 
             if (minDistance >= halfThickness) {
                 appendMass(
@@ -1357,13 +1392,11 @@ class CuttingUI {
                     index
                 );
 
-                return;
+                continue;
             }
 
 
-            // ==================================
-            // 完全位於負側
-            // ==================================
+            // 完全位於負側。
 
             if (maxDistance <= -halfThickness) {
                 appendMass(
@@ -1375,30 +1408,27 @@ class CuttingUI {
                     index
                 );
 
-                return;
+                continue;
             }
 
 
-            // ==================================
-            // 完全位於刀片移除範圍
-            // ==================================
+            // 完全位於刀片移除範圍。
 
             if (
                 minDistance >= -halfThickness &&
                 maxDistance <= halfThickness
             ) {
-                console.log(
-                    "玉石完全位於刀片移除範圍：",
-                    mass.name
-                );
+                discardedMasses.push({
+                    ...mass,
+                    discardReason: "blade",
+                    originalVolume
+                });
 
-                return;
+                continue;
             }
 
 
-            // ==================================
-            // 切割正側玉石
-            // ==================================
+            // 切割正側玉石。
 
             if (maxDistance > halfThickness) {
                 try {
@@ -1416,20 +1446,15 @@ class CuttingUI {
                         placed.placement,
                         index
                     );
-
                 } catch (error) {
-                    console.error(
-                        "正側玉石切割失敗：",
-                        mass.name,
-                        error
+                    throw new Error(
+                        `正側玉料「${mass.name ?? index + 1}」切割失敗：${error.message}`
                     );
                 }
             }
 
 
-            // ==================================
-            // 切割負側玉石
-            // ==================================
+            // 切割負側玉石。
 
             if (minDistance < -halfThickness) {
                 try {
@@ -1447,16 +1472,13 @@ class CuttingUI {
                         placed.placement,
                         index
                     );
-
                 } catch (error) {
-                    console.error(
-                        "負側玉石切割失敗：",
-                        mass.name,
-                        error
+                    throw new Error(
+                        `負側玉料「${mass.name ?? index + 1}」切割失敗：${error.message}`
                     );
                 }
             }
-        });
+        }
 
 
         // ======================================
@@ -1492,7 +1514,6 @@ class CuttingUI {
             };
         };
 
-
         const result = {
             positive: createSideData(
                 positiveMasses,
@@ -1505,13 +1526,14 @@ class CuttingUI {
             )
         };
 
-
         console.log("玉石切割結果：", {
             sourceStone: sourceStone.id,
 
             positiveCount: positiveMasses.length,
 
             negativeCount: negativeMasses.length,
+
+            discardedCount: discardedMasses.length,
 
             positiveVolume:
                 result.positive?.totalJadeVolume ?? 0,
@@ -1529,6 +1551,12 @@ class CuttingUI {
     // ==========================================
 
     createInventoryRecord(mesh, side, result, sourceStone, jadeData) {
+        if (!this.isValidGeometry(mesh)) {
+            throw new Error(
+                `${side} 側原石幾何資料無效，無法建立背包紀錄。`
+            );
+        }
+
         const now = Date.now();
 
         const sideName =
@@ -1588,6 +1616,10 @@ class CuttingUI {
     }
 
 
+    // ==========================================
+    // 原子化保存切割結果
+    // ==========================================
+
     saveCutPieces(result, jadeSplit = null) {
         if (this.isTestMode) {
             return [];
@@ -1626,12 +1658,33 @@ class CuttingUI {
             );
         }
 
-        // 原始原石與有效切割產物都可以再次切割。
         if (!this.isCuttableStone(originalStone)) {
             throw new Error(
                 "來源素材目前不符合切割條件。"
             );
         }
+
+        // 玉料資料必須在修改背包前完成。
+        jadeSplit ??= this.splitJadeData(
+            originalStone,
+            result
+        );
+
+        const positiveRecord = this.createInventoryRecord(
+            result.positivePiece,
+            "positive",
+            result,
+            originalStone,
+            jadeSplit?.positive ?? null
+        );
+
+        const negativeRecord = this.createInventoryRecord(
+            result.negativePiece,
+            "negative",
+            result,
+            originalStone,
+            jadeSplit?.negative ?? null
+        );
 
         const originalStatus = originalStone.status;
         const originalCutAt = originalStone.cutAt;
@@ -1648,86 +1701,59 @@ class CuttingUI {
             ...saveData.inventory
         ];
 
-        const originalTotalCuts =
-            saveData.statistics?.totalCuts ?? 0;
+        const originalStatistics =
+            saveData.statistics
+                ? structuredClone(saveData.statistics)
+                : null;
 
-        jadeSplit ??= this.splitJadeData(
-            originalStone,
-            result
-        );
+        try {
+            originalStone.status = "cut";
+            originalStone.cutAt = Date.now();
 
-        const positiveRecord = this.createInventoryRecord(
-            result.positivePiece,
-            "positive",
-            result,
-            originalStone,
-            jadeSplit.positive
-        );
-
-        const negativeRecord = this.createInventoryRecord(
-            result.negativePiece,
-            "negative",
-            result,
-            originalStone,
-            jadeSplit.negative
-        );
-
-
-        // 將來源素材標記為已切割。
-        originalStone.status = "cut";
-        originalStone.cutAt = Date.now();
-
-        // 如果來源本身就是切割產物，
-        // 則標記為已消耗，避免被重複切割。
-        const isCutPiece =
-            Boolean(
+            const isCutPiece = Boolean(
                 originalStone.sourceStoneId &&
                 originalStone.cutSide
             );
 
-        if (isCutPiece) {
-            originalStone.consumedByCut = true;
-        }
+            if (isCutPiece) {
+                originalStone.consumedByCut = true;
+            }
 
-        // 保留先前切割紀錄，並加入本次新產物。
-        const previousIds = Array.isArray(
-            originalStone.cutResultIds
-        )
-            ? originalStone.cutResultIds
-            : [];
+            const previousIds = Array.isArray(
+                originalStone.cutResultIds
+            )
+                ? originalStone.cutResultIds
+                : [];
 
-        originalStone.cutResultIds = [
-            ...new Set([
-                ...previousIds,
-                positiveRecord.id,
-                negativeRecord.id
-            ])
-        ];
+            originalStone.cutResultIds = [
+                ...new Set([
+                    ...previousIds,
+                    positiveRecord.id,
+                    negativeRecord.id
+                ])
+            ];
 
+            saveData.inventory.push(
+                positiveRecord,
+                negativeRecord
+            );
 
-        // 加入兩塊切割結果。
-        saveData.inventory.push(
-            positiveRecord,
-            negativeRecord
-        );
+            if (!saveData.statistics) {
+                saveData.statistics = {
+                    totalPulls: 0,
+                    totalCuts: 0
+                };
+            }
 
+            saveData.statistics.totalCuts =
+                (Number(saveData.statistics.totalCuts) || 0) + 1;
 
-        // 更新切割統計。
-        if (!saveData.statistics) {
-            saveData.statistics = {
-                totalPulls: 0,
-                totalCuts: 0
-            };
-        }
+            const saved = saveManager.save();
 
-        saveData.statistics.totalCuts =
-            originalTotalCuts + 1;
-
-
-        const saved = saveManager.save();
-
-        if (!saved) {
-            // 存檔失敗時，回復原本背包。
+            if (!saved) {
+                throw new Error("存檔管理器回報保存失敗。");
+            }
+        } catch (error) {
             saveData.inventory = originalInventory;
 
             originalStone.status = originalStatus;
@@ -1752,14 +1778,16 @@ class CuttingUI {
                     originalConsumedState;
             }
 
-            saveData.statistics.totalCuts =
-                originalTotalCuts;
+            if (originalStatistics === null) {
+                delete saveData.statistics;
+            } else {
+                saveData.statistics = originalStatistics;
+            }
 
             throw new Error(
-                "存檔失敗，已回復原本背包資料。"
+                `切割結果保存失敗，已回復背包資料：${error.message}`
             );
         }
-
 
         this.savedCurrentResult = true;
 
@@ -1797,8 +1825,6 @@ class CuttingUI {
             return;
         }
 
-
-        // 真正背包素材必須重新確認狀態。
         if (!this.isTestMode) {
             const latestStone = inventorySystem.getById(
                 this.currentStoneId
@@ -1815,10 +1841,8 @@ class CuttingUI {
                 return;
             }
 
-            // 使用最新背包資料，避免沿用舊資料。
             this.currentStone = latestStone;
         }
-
 
         try {
             cuttingSystem.setBladeThickness(
@@ -1830,20 +1854,39 @@ class CuttingUI {
                 this.getCutPlane()
             );
 
-            this.currentResult = result;
+            if (
+                !result ||
+                !this.isValidGeometry(result.positivePiece) ||
+                !this.isValidGeometry(result.negativePiece)
+            ) {
+                throw new Error(
+                    "原石切割結果不完整，無法建立有效的兩側模型。"
+                );
+            }
 
             const jadeSplit = this.isTestMode
-                ? { positive: null, negative: null }
-                : this.splitJadeData(this.currentStone, result);
+                ? {
+                    positive: null,
+                    negative: null
+                }
+                : this.splitJadeData(
+                    this.currentStone,
+                    result
+                );
 
+            // 先建立結果畫面，再執行存檔。
             this.displayResults(result, jadeSplit);
 
             if (this.elements.results) {
                 this.elements.results.hidden = false;
             }
 
-            const savedRecords = this.saveCutPieces(result, jadeSplit);
+            this.currentResult = result;
 
+            const savedRecords = this.saveCutPieces(
+                result,
+                jadeSplit
+            );
 
             if (this.isTestMode) {
                 this.showMessage(
@@ -1858,12 +1901,21 @@ class CuttingUI {
                     `切割完成！正側與負側兩塊已加入背包。新增 ${savedRecords.length} 筆紀錄。`
                 );
             }
-
         } catch (error) {
             console.error(
                 "切割或存檔失敗：",
                 error
             );
+
+            this.currentResult = null;
+
+            if (this.elements.results) {
+                this.elements.results.hidden = true;
+            }
+
+            if (this.elements.cutButton) {
+                this.elements.cutButton.disabled = false;
+            }
 
             this.showMessage(
                 `切割或存檔失敗：${error.message}`,
@@ -1900,7 +1952,6 @@ class CuttingUI {
         positive.position.x = -1.35;
         negative.position.x = 1.35;
 
-        // 切割結果以半透明外殼呈現，讓內部玉料能被看見。
         for (const material of [
             this.materials.positive,
             this.materials.negative
@@ -1911,20 +1962,25 @@ class CuttingUI {
             material.needsUpdate = true;
         }
 
-        const positiveMasses = jadeSplit?.positive?.masses ?? [];
-        const negativeMasses = jadeSplit?.negative?.masses ?? [];
+        const positiveMasses =
+            jadeSplit?.positive?.masses ?? [];
+
+        const negativeMasses =
+            jadeSplit?.negative?.masses ?? [];
 
         for (const mass of positiveMasses) {
             const jade = this.createJadeMesh(mass);
-            if (!jade) continue;
+
             jade.position.x = -1.35;
+
             this.resultGroup.add(jade);
         }
 
         for (const mass of negativeMasses) {
             const jade = this.createJadeMesh(mass);
-            if (!jade) continue;
+
             jade.position.x = 1.35;
+
             this.resultGroup.add(jade);
         }
 
@@ -1934,7 +1990,6 @@ class CuttingUI {
         );
 
         this.scene.add(this.resultGroup);
-
 
         if (this.elements.originalVolume) {
             this.elements.originalVolume.textContent =
@@ -1956,7 +2011,6 @@ class CuttingUI {
                 result.removedVolume.toFixed(4);
         }
 
-
         const total =
             result.positiveVolume +
             result.negativeVolume +
@@ -1970,7 +2024,6 @@ class CuttingUI {
             this.elements.volumeDifference.textContent =
                 difference.toFixed(8);
         }
-
 
         this.currentView = "results";
 
@@ -2085,7 +2138,6 @@ class CuttingUI {
         this.cutPosition = 0;
         this.bladeThickness = 0.025;
 
-
         if (this.elements.axis) {
             this.elements.axis.value = "x";
         }
@@ -2114,13 +2166,10 @@ class CuttingUI {
             this.elements.cutButton.disabled = false;
         }
 
-
         cuttingSystem.setBladeThickness(0.025);
 
         this.refreshStoneSelector();
 
-
-        // 優先選擇下一件可切割的背包素材。
         const stones = inventorySystem.getCuttable()
             .filter(stone => this.isCuttableStone(stone));
 
@@ -2140,8 +2189,6 @@ class CuttingUI {
             }
         }
 
-
-        // 沒有背包素材時，改用測試素材。
         this.loadTestStone(
             testIrregularStone,
             "不規則原石測試素材"
@@ -2185,6 +2232,8 @@ class CuttingUI {
     // ==========================================
 
     animate() {
+        if (!this.initialized) return;
+
         this.animationFrame = requestAnimationFrame(
             () => {
                 this.animate();
@@ -2221,9 +2270,49 @@ class CuttingUI {
             this.resizeObserver = null;
         }
 
+        if (this.boundPageOpened) {
+            document.removeEventListener(
+                "cutting:page-opened",
+                this.boundPageOpened
+            );
+
+            this.boundPageOpened = null;
+        }
+
         this.clearGroup(this.originalGroup);
         this.clearGroup(this.resultGroup);
         this.clearPreview();
+
+        this.originalGroup = null;
+        this.resultGroup = null;
+        this.previewGroup = null;
+
+        if (this.gridHelper) {
+            this.scene?.remove(this.gridHelper);
+
+            this.gridHelper.geometry.dispose();
+
+            const materials = Array.isArray(
+                this.gridHelper.material
+            )
+                ? this.gridHelper.material
+                : [this.gridHelper.material];
+
+            for (const material of materials) {
+                material.dispose();
+            }
+
+            this.gridHelper = null;
+        }
+
+        if (this.floorMesh) {
+            this.scene?.remove(this.floorMesh);
+
+            this.floorMesh.geometry.dispose();
+            this.floorMesh.material.dispose();
+
+            this.floorMesh = null;
+        }
 
         if (this.controls) {
             this.controls.dispose();
@@ -2240,12 +2329,15 @@ class CuttingUI {
         }
 
         for (const material of Object.values(this.materials)) {
-            if (material && material.dispose) {
+            if (material?.dispose) {
                 material.dispose();
             }
         }
 
         this.materials = {};
+
+        this.scene = null;
+        this.camera = null;
 
         this.initialized = false;
     }
