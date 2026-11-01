@@ -13,7 +13,7 @@ class InventorySystem {
     getAll() {
         const data = saveManager.getData();
 
-        if (!Array.isArray(data.inventory)) {
+        if (!data || !Array.isArray(data.inventory)) {
             return [];
         }
 
@@ -22,22 +22,26 @@ class InventorySystem {
 
     getUncut() {
         return this.getAll().filter(
-            stone => stone.status === "uncut"
+            stone => stone?.status === "uncut"
         );
     }
 
     getCut() {
         return this.getAll().filter(
-            stone => stone.status === "cut"
+            stone => stone?.status === "cut"
         );
     }
 
-    // 可送往工作台的原石：
-    // 1. 尚未切割的原石。
-    // 2. 已切割、具有來源紀錄及有效幾何資料的切割產物。
+    // 可送往工作台的素材：
+    // 1. 尚未切割且幾何資料有效的原石。
+    // 2. 尚未被再次切割消耗，且幾何資料有效的切割產物。
     getCuttable() {
         return this.getAll().filter(stone => {
             if (!stone || !stone.id) {
+                return false;
+            }
+
+            if (stone.consumedByCut === true) {
                 return false;
             }
 
@@ -50,8 +54,10 @@ class InventorySystem {
                 Boolean(stone.sourceStoneId) &&
                 Boolean(stone.cutSide);
 
-            return isCutPiece &&
-                this.hasValidGeometry(stone);
+            return (
+                isCutPiece &&
+                this.hasValidGeometry(stone)
+            );
         });
     }
 
@@ -68,11 +74,17 @@ class InventorySystem {
             return false;
         }
 
-        return geometry.vertices.every(vertex =>
+        const validVertices = geometry.vertices.every(vertex =>
             Array.isArray(vertex) &&
-            vertex.length >= 3 &&
-            vertex.slice(0, 3).every(Number.isFinite)
-        ) && geometry.faces.every(face =>
+            vertex.length === 3 &&
+            vertex.every(Number.isFinite)
+        );
+
+        if (!validVertices) {
+            return false;
+        }
+
+        return geometry.faces.every(face =>
             Array.isArray(face) &&
             face.length === 3 &&
             face.every(index =>
@@ -89,7 +101,7 @@ class InventorySystem {
         }
 
         return this.getAll().find(
-            stone => stone.id === stoneId
+            stone => stone?.id === stoneId
         ) ?? null;
     }
 
@@ -206,6 +218,27 @@ class InventorySystem {
 
     hasStone(stoneId) {
         return this.getById(stoneId) !== null;
+    }
+
+    isCuttable(stone) {
+        if (!stone || !stone.id) {
+            return false;
+        }
+
+        if (stone.consumedByCut === true) {
+            return false;
+        }
+
+        if (stone.status === "uncut") {
+            return this.hasValidGeometry(stone);
+        }
+
+        return (
+            stone.status === "cut" &&
+            Boolean(stone.sourceStoneId) &&
+            Boolean(stone.cutSide) &&
+            this.hasValidGeometry(stone)
+        );
     }
 
     notifyChanged() {
