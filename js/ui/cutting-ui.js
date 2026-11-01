@@ -4,6 +4,9 @@ import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exampl
 import { cuttingSystem } from "../systems/cutting-system.js?version=6";
 import { saveManager } from "../core/save-manager.js";
 import { inventorySystem } from "../systems/inventory.js";
+import { meshPlacementUtils } from "../systems/mesh-placement-utils.js";
+import { meshGeometryUtils } from "../systems/mesh-geometry-utils.js";
+import { geometryEngine } from "../systems/geometry-engine.js";
 
 import {
     testIrregularStone,
@@ -874,10 +877,231 @@ class CuttingUI {
 
 
     // ==========================================
+    // 內部玉石定位與切割
+    // ==========================================
+
+    createStableJadePlacement(sourceStone, mass, index, hostBounds) {
+        if (mass.placementApplied && mass.geometry) {
+            return {
+                geometry: structuredClone(mass.geometry),
+                placement: mass.placement ?? null
+            };
+        }
+
+        const seedText = String(mass.id ?? index);
+        let seed = 2166136261;
+
+        for (let i = 0; i < seedText.length; i++) {
+            seed ^= seedText.charCodeAt(i);
+            seed = Math.imul(seed, 16777619);
+        }
+
+        const random = () => {
+            seed += 0x6D2B79F5;
+            let value = seed;
+            value = Math.imul(value ^ (value >>> 15), value | 1);
+            value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+            return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+        };
+
+        const volume = Math.max(0, Number(mass.volumePercent) || 0);
+        const fitRatio = Math.min(
+            0.42,
+            Math.max(0.18, 0.16 + Math.sqrt(volume / 100) * 0.42)
+        );
+
+        const normalizedPosition = [
+            0.28 + random() * 0.44,
+            0.28 + random() * 0.44,
+            0.28 + random() * 0.44
+        ];
+
+        const rotation = {
+            x: random() * Math.PI * 2,
+            y: random() * Math.PI * 2,
+            z: random() * Math.PI * 2
+        };
+
+        const placed = meshPlacementUtils.createPlacement(
+            mass.geometry,
+            hostBounds,
+            {
+                rotation,
+                fitRatio,
+                padding: 0.04,
+                normalizedPosition
+            }
+        );
+
+        return {
+            geometry: placed.mesh,
+            placement: placed.placement
+        };
+    }
+
+    splitJadeData(sourceStone, cutResult) {
+        const sourceData = sourceStone?.jadeData;
+
+        if (!sourceData || !Array.isArray(sourceData.masses)) {
+            return {
+                positive: null,
+                negative: null
+            };
+        }
+
+        const hostBounds = meshGeometryUtils.getBounds(
+            sourceStone.geometry
+        );
+
+        const halfThickness = cutResult.bladeThickness / 2;
+        const normal = cutResult.cutPlane.normal;
+        const point = cutResult.cutPlane.point;
+
+        const positivePlane = {
+            point: point.map((value, axis) =>
+                value + normal[axis] * halfThickness
+            ),
+            normal: [...normal]
+        };
+
+        const negativePlane = {
+            point: point.map((value, axis) =>
+                value - normal[axis] * halfThickness
+            ),
+            normal: normal.map(value => -value)
+        };
+
+        const positiveMasses = [];
+        const negativeMasses = [];
+
+        const getVolume = mesh => {
+            if (
+                !mesh ||
+                !Array.isArray(mesh.vertices) ||
+                !Array.isArray(mesh.faces) ||
+                mesh.vertices.length < 4 ||
+                mesh.faces.length < 4
+            ) {
+                return 0;
+            }
+
+            try {
+                return cuttingSystem.calculateVolume(mesh);
+            } catch {
+                return 0;
+            }
+        };
+
+        sourceData.masses.forEach((mass, index) => {
+            if (!mass?.geometry) return;
+
+            let placed;
+
+            try {
+                placed = this.createStableJadePlacement(
+                    sourceStone,
+                    mass,
+                    index,
+                    hostBounds
+                );
+            } catch (error) {
+                console.warn("玉石定位失敗，略過該玉料：", error);
+                return;
+            }
+
+            const jadeGeometry = placed.geometry;
+            const originalVolume = getVolume(jadeGeometry);
+
+            if (originalVolume <= 1e-10) return;
+
+            const appendMass = (side, geometry) => {
+                const volume = getVolume(geometry);
+                if (volume <= 1e-10) return;
+
+                const ratio = Math.min(1, volume / originalVolume);
+                const record = {
+                    ...mass,
+                    id: `${mass.id ?? "jade"}-${side}-${index}`,
+                    sourceMassId: mass.id ?? null,
+                    geometry: structuredClone(geometry),
+                    placementApplied: true,
+                    placement: placed.placement,
+                    volumePercent: (Number(mass.volumePercent) || 0) * ratio
+                };
+
+                (side === "positive"
+                    ? positiveMasses
+                    : negativeMasses
+                ).push(record);
+            };
+
+            try {
+                const positivePiece = geometryEngine.clipMesh(
+                    jadeGeometry,
+                    positivePlane
+                );
+
+                const negativePiece = geometryEngine.clipMesh(
+                    jadeGeometry,
+                    negativePlane
+                );
+
+                appendMass("positive", positivePiece);
+                appendMass("negative", negativePiece);
+
+            } catch (error) {
+                // 若玉料沒有穿過切割面，保留在其實際所在的一側。
+                const center = [0, 0, 0];
+
+                jadeGeometry.vertices.forEach(vertex => {
+                    center[0] += vertex[0] / jadeGeometry.vertices.length;
+                    center[1] += vertex[1] / jadeGeometry.vertices.length;
+                    center[2] += vertex[2] / jadeGeometry.vertices.length;
+                });
+
+                const distance =
+                    (center[0] - point[0]) * normal[0] +
+                    (center[1] - point[1]) * normal[1] +
+                    (center[2] - point[2]) * normal[2];
+
+                if (distance > halfThickness) {
+                    appendMass("positive", jadeGeometry);
+                } else if (distance < -halfThickness) {
+                    appendMass("negative", jadeGeometry);
+                }
+            }
+        });
+
+        const createSideData = (masses, suffix) => {
+            if (masses.length === 0) return null;
+
+            const totalJadeVolume = masses.reduce(
+                (sum, mass) => sum + mass.volumePercent,
+                0
+            );
+
+            return {
+                ...sourceData,
+                stoneId: `${sourceStone.id}-${suffix}`,
+                totalJadeVolume,
+                retainedVolume: totalJadeVolume,
+                masses,
+                discardedMasses: []
+            };
+        };
+
+        return {
+            positive: createSideData(positiveMasses, "positive"),
+            negative: createSideData(negativeMasses, "negative")
+        };
+    }
+
+
+    // ==========================================
     // 切割結果紀錄
     // ==========================================
 
-    createInventoryRecord(mesh, side, result, sourceStone) {
+    createInventoryRecord(mesh, side, result, sourceStone, jadeData) {
         const now = Date.now();
 
         const sideName =
@@ -932,9 +1156,7 @@ class CuttingUI {
                 )
             },
 
-            // 目前只分割原石外部幾何，
-            // 尚未真正分割內部玉石。
-            jadeData: null
+            jadeData: jadeData ?? null
         };
     }
 
@@ -990,18 +1212,25 @@ class CuttingUI {
             ...saveData.inventory
         ];
 
+        const jadeSplit = this.splitJadeData(
+            originalStone,
+            result
+        );
+
         const positiveRecord = this.createInventoryRecord(
             result.positivePiece,
             "positive",
             result,
-            originalStone
+            originalStone,
+            jadeSplit.positive
         );
 
         const negativeRecord = this.createInventoryRecord(
             result.negativePiece,
             "negative",
             result,
-            originalStone
+            originalStone,
+            jadeSplit.negative
         );
 
 
