@@ -8,6 +8,10 @@ import { gachaUI } from "./ui/gacha-ui.js";
 import { settingsUI } from "./ui/settings-ui.js";
 import { inventoryUI } from "./ui/inventory-ui.js";
 import { cuttingUI } from "./ui/cutting-ui.js";
+
+// 切割視覺強化模組
+import "./ui/cutting-result-visuals.js";
+
 import { cuttingInventoryBridge } from "./ui/cutting-inventory-bridge.js";
 import { workshopUI } from "./ui/workshop-ui.js";
 
