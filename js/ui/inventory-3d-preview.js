@@ -17,6 +17,7 @@ class Inventory3DPreview {
 
         this.stoneMesh = null;
         this.jadeMeshes = [];
+        this.previewGroup = null;
         this.grid = null;
 
         this.resizeObserver = null;
@@ -38,9 +39,27 @@ class Inventory3DPreview {
     mount(container, stone) {
         if (
             !container ||
-            !stone?.geometry ||
             !stone?.id
         ) {
+            return false;
+        }
+
+        const isCutPiece = stone.status === "cut";
+
+        // 原石需要 geometry。
+        // 切割產物優先使用獨立玉石 geometry。
+        const hasJade =
+            Array.isArray(stone.jadeData?.masses) &&
+            stone.jadeData.masses.some(mass =>
+                mass?.geometry?.vertices?.length >= 4 &&
+                mass?.geometry?.faces?.length >= 4
+            );
+
+        if (!isCutPiece && !stone.geometry) {
+            return false;
+        }
+
+        if (isCutPiece && !hasJade && !stone.geometry) {
             return false;
         }
 
@@ -50,9 +69,8 @@ class Inventory3DPreview {
         this.previewId = `inventory-${stone.id}`;
 
         try {
-            this.validateGeometry(stone.geometry);
-
             this.scene = new THREE.Scene();
+
             this.scene.background =
                 new THREE.Color("#20231e");
 
@@ -100,13 +118,17 @@ class Inventory3DPreview {
             this.controls.autoRotateSpeed = 0.8;
 
             this.setupLights();
+
             this.setupPreview(stone);
+
             this.setupGround();
+
             this.setupResizeObserver();
 
             this.resize();
 
             this.initialized = true;
+
             this.animate();
 
             return true;
@@ -149,7 +171,7 @@ class Inventory3DPreview {
             meshData.vertices.length < 4 ||
             meshData.faces.length < 4
         ) {
-            throw new Error("原石幾何資料不完整");
+            throw new Error("模型幾何資料不完整");
         }
 
         for (const vertex of meshData.vertices) {
@@ -158,7 +180,7 @@ class Inventory3DPreview {
                 vertex.length !== 3 ||
                 !vertex.every(Number.isFinite)
             ) {
-                throw new Error("原石頂點資料格式錯誤");
+                throw new Error("模型頂點資料格式錯誤");
             }
         }
 
@@ -172,7 +194,7 @@ class Inventory3DPreview {
                     index < meshData.vertices.length
                 )
             ) {
-                throw new Error("原石面資料格式錯誤");
+                throw new Error("模型面資料格式錯誤");
             }
         }
 
@@ -198,6 +220,7 @@ class Inventory3DPreview {
         );
 
         keyLight.position.set(5, 7, 5);
+
         this.scene.add(keyLight);
 
         const fillLight = new THREE.DirectionalLight(
@@ -206,6 +229,7 @@ class Inventory3DPreview {
         );
 
         fillLight.position.set(-5, 2, -4);
+
         this.scene.add(fillLight);
 
         const rimLight = new THREE.PointLight(
@@ -215,33 +239,24 @@ class Inventory3DPreview {
         );
 
         rimLight.position.set(0, 5, -5);
+
         this.scene.add(rimLight);
     }
 
 
     // ==========================================
     // 建立幾何
-    // 與切割工作台使用相同的面資料展開方式
+    // 與切割工作台相同，依照 faces 展開頂點
     // ==========================================
 
     meshToGeometry(meshData) {
-        if (
-            !meshData ||
-            !Array.isArray(meshData.vertices) ||
-            !Array.isArray(meshData.faces)
-        ) {
-            throw new Error("模型幾何資料格式錯誤");
-        }
+        this.validateGeometry(meshData);
 
         const positions = [];
 
         for (const face of meshData.faces) {
             for (const index of face) {
                 const vertex = meshData.vertices[index];
-
-                if (!vertex || vertex.length !== 3) {
-                    throw new Error("模型頂點資料無效");
-                }
 
                 positions.push(
                     vertex[0],
@@ -270,38 +285,195 @@ class Inventory3DPreview {
 
 
     // ==========================================
+    // 玉石顏色
+    // ==========================================
+
+    getJadeColor(jadeType) {
+        const jadeColors = {
+            agate: 0xb96b58,
+            jasper: 0x9c5948,
+            quartz: 0xe8e3d8,
+            commercial_nephrite: 0x8caa85,
+            amethyst: 0x9275b8,
+            citrine: 0xd9ae43,
+            garnet: 0x922d42,
+            lapis_lazuli: 0x315caa,
+            turquoise: 0x45aaa0,
+            aquamarine: 0x83c9c5,
+            peridot: 0x91ae4b,
+            spinel: 0xa94d75,
+            tourmaline: 0x547d65,
+            jadeite: 0x75a982,
+            moonstone: 0xc8d5dc,
+            emerald: 0x16845a,
+            ruby: 0xc42e42,
+            sapphire: 0x3156a4,
+            precious_opal: 0xb9c6d0,
+            imperial_green_jadeite: 0x087c45,
+            alexandrite: 0x526b9e,
+            black_opal: 0x343c50,
+            pigeon_blood_ruby: 0x8e142d,
+            jade_37: 0xd5bd75
+        };
+
+        return jadeColors[jadeType] ?? 0x72a98a;
+    }
+
+
+    // ==========================================
+    // 建立獨立玉石模型
+    // ==========================================
+
+    createJadeMesh(mass) {
+        if (!mass?.geometry) {
+            return null;
+        }
+
+        const geometry = this.meshToGeometry(
+            mass.geometry
+        );
+
+        const material = new THREE.MeshStandardMaterial({
+            color: this.getJadeColor(mass.jadeType),
+            roughness: 0.2,
+            metalness: 0.03,
+            side: THREE.DoubleSide,
+            transparent: false,
+            opacity: 1
+        });
+
+        const mesh = new THREE.Mesh(
+            geometry,
+            material
+        );
+
+        mesh.name = mass.name ?? "獨立玉石";
+
+        mesh.userData.jadeType =
+            mass.jadeType ?? null;
+
+        mesh.userData.jadeRarity =
+            mass.rarity ?? null;
+
+        mesh.userData.sourceMassId =
+            mass.sourceMassId ?? mass.id ?? null;
+
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        return mesh;
+    }
+
+
+    // ==========================================
     // 建立預覽模型
     // ==========================================
 
     setupPreview(stone) {
+        const isCutPiece = stone.status === "cut";
+
+        // ======================================
+        // 已切割產物
+        // 直接顯示獨立玉石，不顯示原石外殼
+        // ======================================
+
+        if (isCutPiece) {
+            const masses = Array.isArray(
+                stone.jadeData?.masses
+            )
+                ? stone.jadeData.masses
+                : [];
+
+            const validMasses = masses.filter(mass => {
+                try {
+                    this.validateGeometry(mass?.geometry);
+                    return true;
+                } catch {
+                    console.warn(
+                        "略過無效玉石資料：",
+                        mass
+                    );
+
+                    return false;
+                }
+            });
+
+            console.log(
+                "背包獨立玉石數量：",
+                validMasses.length,
+                stone.id
+            );
+
+            // 沒有玉石資料時，不把原石外殼冒充成獨立玉石。
+            if (validMasses.length === 0) {
+                throw new Error(
+                    "切割產物沒有可顯示的獨立玉石資料"
+                );
+            }
+
+            this.previewGroup = new THREE.Group();
+
+            for (const mass of validMasses) {
+                const jadeMesh = this.createJadeMesh(mass);
+
+                if (!jadeMesh) continue;
+
+                this.previewGroup.add(jadeMesh);
+
+                this.jadeMeshes.push(jadeMesh);
+            }
+
+            if (this.jadeMeshes.length === 0) {
+                throw new Error("無法建立獨立玉石模型");
+            }
+
+            this.scene.add(this.previewGroup);
+
+            // 計算所有玉石的共同範圍。
+            // 保留同一切割產物內多塊玉石的相對位置。
+            const combinedBounds = new THREE.Box3()
+                .setFromObject(this.previewGroup);
+
+            if (combinedBounds.isEmpty()) {
+                throw new Error("無法取得玉石模型範圍");
+            }
+
+            const center = new THREE.Vector3();
+
+            combinedBounds.getCenter(center);
+
+            // 將整組玉石移至預覽中心。
+            this.previewGroup.position.sub(center);
+
+            // 重新計算置中後的整體範圍。
+            combinedBounds.setFromObject(
+                this.previewGroup
+            );
+
+            this.fitCamera(combinedBounds);
+
+            return;
+        }
+
+
+        // ======================================
+        // 未切割原石
+        // 顯示完整、不透明的原石
+        // ======================================
+
         const geometry = this.meshToGeometry(
             stone.geometry
         );
 
-        // 使用切割工作台的原始材質顏色。
-        const stoneColors = {
-            original: 0x777b68,
-            positive: 0x879b72,
-            negative: 0xb59a61
-        };
-
-        let stoneColor = stoneColors.original;
-
-        if (stone.status === "cut") {
-            if (stone.cutSide === "positive") {
-                stoneColor = stoneColors.positive;
-            } else if (stone.cutSide === "negative") {
-                stoneColor = stoneColors.negative;
-            }
-        }
-
-        // 背包預覽一律使用不透明材質。
         this.stoneMaterial =
             new THREE.MeshStandardMaterial({
-                color: stoneColor,
-                roughness: stone.status === "cut" ? 0.68 : 0.78,
-                metalness: stone.status === "cut" ? 0.06 : 0.05,
-                flatShading: true
+                color: 0x777b68,
+                roughness: 0.78,
+                metalness: 0.05,
+                flatShading: true,
+                transparent: false,
+                opacity: 1,
+                depthWrite: true
             });
 
         this.stoneMesh = new THREE.Mesh(
@@ -314,10 +486,10 @@ class Inventory3DPreview {
 
         this.scene.add(this.stoneMesh);
 
-        // 不將 jadeData 疊加在石頭表面。
-        // 切割工作台的玉料是在結果展示區獨立呈現的。
+        // 未切割原石只顯示外殼。
+        // 內部玉料不會透過外殼顯示。
 
-        this.fitCamera(geometry);
+        this.fitCamera(geometry.boundingBox);
     }
 
 
@@ -325,15 +497,14 @@ class Inventory3DPreview {
     // 相機調整
     // ==========================================
 
-    fitCamera(geometry) {
-        const box = geometry.boundingBox;
-
-        if (!box) {
-            throw new Error("無法取得原石尺寸");
+    fitCamera(bounds) {
+        if (!bounds || bounds.isEmpty()) {
+            throw new Error("無法取得模型尺寸");
         }
 
         const size = new THREE.Vector3();
-        box.getSize(size);
+
+        bounds.getSize(size);
 
         const maxDimension = Math.max(
             size.x,
@@ -416,6 +587,7 @@ class Inventory3DPreview {
             });
 
             this.resizeObserver.observe(this.container);
+
             return;
         }
 
@@ -445,6 +617,7 @@ class Inventory3DPreview {
         if (width <= 0 || height <= 0) return;
 
         this.camera.aspect = width / height;
+
         this.camera.updateProjectionMatrix();
 
         this.renderer.setSize(
@@ -460,13 +633,18 @@ class Inventory3DPreview {
     // ==========================================
 
     setInclusionsVisible(visible) {
-        // 背包預覽不額外疊加內部玉料。
+        for (const jadeMesh of this.jadeMeshes) {
+            jadeMesh.visible = Boolean(visible);
+        }
+
         return true;
     }
 
 
     setStoneVisible(visible) {
-        if (!this.stoneMesh) return false;
+        if (!this.stoneMesh) {
+            return false;
+        }
 
         this.stoneMesh.visible = Boolean(visible);
 
@@ -475,12 +653,15 @@ class Inventory3DPreview {
 
 
     setStoneOpacity(opacity) {
-        if (!this.stoneMaterial) return false;
+        if (!this.stoneMaterial) {
+            return false;
+        }
 
-        // 背包模型維持不透明，避免玉料穿透外殼。
+        // 原石外殼維持不透明。
         this.stoneMaterial.opacity = 1;
         this.stoneMaterial.transparent = false;
         this.stoneMaterial.depthWrite = true;
+
         this.stoneMaterial.needsUpdate = true;
 
         return true;
@@ -523,10 +704,12 @@ class Inventory3DPreview {
 
         if (this.animationFrame !== null) {
             cancelAnimationFrame(this.animationFrame);
+
             this.animationFrame = null;
         }
 
         this.resizeObserver?.disconnect();
+
         this.resizeObserver = null;
 
         if (this.windowResizeHandler) {
@@ -539,29 +722,39 @@ class Inventory3DPreview {
         }
 
         this.controls?.dispose();
+
         this.controls = null;
 
         if (this.stoneMesh) {
             this.stoneMesh.geometry?.dispose();
+
             this.stoneMesh.removeFromParent();
+
             this.stoneMesh = null;
         }
 
         for (const jadeMesh of this.jadeMeshes) {
             jadeMesh.geometry?.dispose();
+
             jadeMesh.material?.dispose();
+
             jadeMesh.removeFromParent();
         }
 
         this.jadeMeshes = [];
 
+        this.previewGroup = null;
+
         this.stoneMaterial?.dispose();
+
         this.stoneMaterial = null;
 
         if (this.grid) {
             this.grid.geometry?.dispose();
 
-            const materials = Array.isArray(this.grid.material)
+            const materials = Array.isArray(
+                this.grid.material
+            )
                 ? this.grid.material
                 : [this.grid.material];
 
@@ -570,6 +763,7 @@ class Inventory3DPreview {
             }
 
             this.grid.removeFromParent();
+
             this.grid = null;
         }
 
