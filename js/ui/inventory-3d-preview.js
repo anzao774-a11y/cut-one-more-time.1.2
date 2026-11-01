@@ -15,6 +15,7 @@ class Inventory3DPreview {
         this.controls = null;
 
         this.stoneMesh = null;
+        this.jadeMeshes = [];
         this.grid = null;
 
         this.resizeObserver = null;
@@ -316,13 +317,18 @@ class Inventory3DPreview {
         geometry.computeBoundingBox();
         geometry.computeBoundingSphere();
 
+        const isCutPiece = stone.status === "cut";
+
         this.stoneMaterial =
             new THREE.MeshStandardMaterial({
                 color: 0x9a927d,
                 roughness: 0.55,
                 metalness: 0.05,
                 flatShading: true,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                transparent: isCutPiece,
+                opacity: isCutPiece ? 0.24 : 1,
+                depthWrite: !isCutPiece
             });
 
         this.stoneMesh = new THREE.Mesh(
@@ -331,6 +337,96 @@ class Inventory3DPreview {
         );
 
         this.scene.add(this.stoneMesh);
+
+        // 切割後以半透明外殼展示內部玉料，未切割原石維持完整外觀。
+        const jadeColors = {
+            agate: 0xb96b58,
+            jasper: 0x9c5948,
+            quartz: 0xe8e3d8,
+            commercial_nephrite: 0x8caa85,
+            amethyst: 0x9275b8,
+            citrine: 0xd9ae43,
+            garnet: 0x922d42,
+            lapis_lazuli: 0x315caa,
+            turquoise: 0x45aaa0,
+            aquamarine: 0x83c9c5,
+            peridot: 0x91ae4b,
+            spinel: 0xa94d75,
+            tourmaline: 0x547d65,
+            jadeite: 0x75a982,
+            moonstone: 0xc8d5dc,
+            emerald: 0x16845a,
+            ruby: 0xc42e42,
+            sapphire: 0x3156a4,
+            precious_opal: 0xb9c6d0,
+            imperial_green_jadeite: 0x087c45,
+            alexandrite: 0x526b9e,
+            black_opal: 0x343c50,
+            pigeon_blood_ruby: 0x8e142d,
+            jade_37: 0xd5bd75
+        };
+
+        const jadeMasses = Array.isArray(stone.jadeData?.masses)
+            ? stone.jadeData.masses
+            : [];
+
+        for (const mass of jadeMasses) {
+            const jadeData = mass?.geometry;
+
+            if (
+                !jadeData ||
+                !Array.isArray(jadeData.vertices) ||
+                !Array.isArray(jadeData.faces) ||
+                jadeData.vertices.length < 4 ||
+                jadeData.faces.length < 4
+            ) {
+                continue;
+            }
+
+            const jadeGeometry = new THREE.BufferGeometry();
+            const jadePositions = jadeData.vertices.flat();
+            const jadeIndices = jadeData.faces.flat();
+
+            jadeGeometry.setAttribute(
+                "position",
+                new THREE.Float32BufferAttribute(jadePositions, 3)
+            );
+
+            jadeGeometry.setIndex(jadeIndices);
+
+            // 玉料與原石共用原始世界座標，因此套用相同的置中位移。
+            jadeGeometry.translate(
+                -center.x,
+                -center.y,
+                -center.z
+            );
+
+            jadeGeometry.computeVertexNormals();
+            jadeGeometry.computeBoundingSphere();
+
+            const jadeMaterial = new THREE.MeshStandardMaterial({
+                color: jadeColors[mass.jadeType] ?? 0x72a98a,
+                roughness: 0.2,
+                metalness: 0.03,
+                side: THREE.DoubleSide
+            });
+
+            const jadeMesh = new THREE.Mesh(
+                jadeGeometry,
+                jadeMaterial
+            );
+
+            jadeMesh.name = mass.name ?? "內部玉料";
+            jadeMesh.userData.jadeType = mass.jadeType ?? null;
+            jadeMesh.userData.jadeRarity = mass.rarity ?? null;
+            jadeMesh.castShadow = true;
+            jadeMesh.receiveShadow = true;
+
+            this.scene.add(jadeMesh);
+
+            this.jadeMeshes ??= [];
+            this.jadeMeshes.push(jadeMesh);
+        }
 
         this.fitCamera(geometry);
     }
@@ -609,6 +705,14 @@ class Inventory3DPreview {
 
             this.stoneMesh = null;
         }
+
+        for (const jadeMesh of this.jadeMeshes ?? []) {
+            jadeMesh.geometry?.dispose();
+            jadeMesh.material?.dispose();
+            jadeMesh.removeFromParent();
+        }
+
+        this.jadeMeshes = [];
 
         this.stoneMaterial?.dispose();
 
