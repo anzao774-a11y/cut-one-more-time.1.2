@@ -20,16 +20,13 @@ class Inventory3DPreview {
         this.resizeObserver = null;
         this.animationFrame = null;
 
+        this.windowResizeHandler = null;
+        this.bounds = null;
+
         this.initialized = false;
         this.destroying = false;
     }
 
-    /**
-     * 建立背包原石預覽
-     *
-     * stone.geometry：原石幾何
-     * stone.jadeData.masses：內部模型資料
-     */
     mount(container, stone) {
         if (!container || !stone?.geometry || !stone?.id) {
             return false;
@@ -69,6 +66,10 @@ class Inventory3DPreview {
                 THREE.ACESFilmicToneMapping;
 
             this.renderer.toneMappingExposure = 1.15;
+
+            this.renderer.domElement.style.display = "block";
+            this.renderer.domElement.style.width = "100%";
+            this.renderer.domElement.style.height = "100%";
 
             container.replaceChildren(
                 this.renderer.domElement
@@ -121,9 +122,6 @@ class Inventory3DPreview {
         }
     }
 
-    /**
-     * 驗證幾何資料
-     */
     validateGeometry(meshData) {
         if (
             !meshData ||
@@ -162,9 +160,6 @@ class Inventory3DPreview {
         return true;
     }
 
-    /**
-     * 建立場景光源
-     */
     setupLights() {
         const ambient = new THREE.AmbientLight(
             0xffffff,
@@ -199,9 +194,6 @@ class Inventory3DPreview {
         this.scene.add(rimLight);
     }
 
-    /**
-     * 建立原石及內部模型
-     */
     setupPreview(stone) {
         const jadeData = stone.jadeData || {};
 
@@ -249,12 +241,7 @@ class Inventory3DPreview {
         );
     }
 
-    /**
-     * 依原石尺寸調整攝影機
-     */
     fitCamera(meshData) {
-        const positions = meshData.vertices;
-
         const min = new THREE.Vector3(
             Infinity,
             Infinity,
@@ -267,22 +254,15 @@ class Inventory3DPreview {
             -Infinity
         );
 
-        for (const vertex of positions) {
-            min.min(
-                new THREE.Vector3(
-                    vertex[0],
-                    vertex[1],
-                    vertex[2]
-                )
+        for (const vertex of meshData.vertices) {
+            const point = new THREE.Vector3(
+                vertex[0],
+                vertex[1],
+                vertex[2]
             );
 
-            max.max(
-                new THREE.Vector3(
-                    vertex[0],
-                    vertex[1],
-                    vertex[2]
-                )
-            );
+            min.min(point);
+            max.max(point);
         }
 
         const size = max.clone().sub(min);
@@ -293,6 +273,13 @@ class Inventory3DPreview {
             size.z,
             0.1
         );
+
+        this.bounds = {
+            min,
+            max,
+            size,
+            maxDimension
+        };
 
         const distance = maxDimension * 2.6;
 
@@ -322,41 +309,56 @@ class Inventory3DPreview {
         this.controls.update();
     }
 
-    /**
-     * 建立地面格線
-     */
     setupGround() {
+        if (!this.bounds) {
+            return;
+        }
+
+        const { min, maxDimension } = this.bounds;
+
+        const groundY =
+            min.y - maxDimension * 0.08;
+
+        const gridSize = Math.max(
+            maxDimension * 3,
+            1
+        );
+
+        const divisions = 12;
+
         const grid = new THREE.GridHelper(
-            6,
-            12,
+            gridSize,
+            divisions,
             0x77715c,
             0x393b32
         );
 
-        grid.position.y = -1.5;
+        grid.position.y = groundY;
 
         this.scene.add(grid);
         this.grid = grid;
     }
 
-    /**
-     * 監聽容器尺寸
-     */
     setupResizeObserver() {
-        if (typeof ResizeObserver === "undefined") {
+        if (typeof ResizeObserver !== "undefined") {
+            this.resizeObserver = new ResizeObserver(() => {
+                this.resize();
+            });
+
+            this.resizeObserver.observe(this.container);
             return;
         }
 
-        this.resizeObserver = new ResizeObserver(() => {
+        this.windowResizeHandler = () => {
             this.resize();
-        });
+        };
 
-        this.resizeObserver.observe(this.container);
+        window.addEventListener(
+            "resize",
+            this.windowResizeHandler
+        );
     }
 
-    /**
-     * 更新渲染尺寸
-     */
     resize() {
         if (
             !this.renderer ||
@@ -376,12 +378,13 @@ class Inventory3DPreview {
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
 
-        this.renderer.setSize(width, height);
+        this.renderer.setSize(
+            width,
+            height,
+            false
+        );
     }
 
-    /**
-     * 顯示或隱藏內部模型
-     */
     setInclusionsVisible(visible) {
         if (!this.previewId) {
             return false;
@@ -393,9 +396,6 @@ class Inventory3DPreview {
         );
     }
 
-    /**
-     * 顯示或隱藏原石
-     */
     setStoneVisible(visible) {
         if (!this.previewId) {
             return false;
@@ -407,9 +407,6 @@ class Inventory3DPreview {
         );
     }
 
-    /**
-     * 調整原石透明度
-     */
     setStoneOpacity(opacity) {
         if (!this.previewId) {
             return false;
@@ -421,9 +418,6 @@ class Inventory3DPreview {
         );
     }
 
-    /**
-     * 開始動畫
-     */
     animate() {
         if (
             !this.renderer ||
@@ -445,9 +439,6 @@ class Inventory3DPreview {
         );
     }
 
-    /**
-     * 清理預覽
-     */
     destroy() {
         this.destroying = true;
 
@@ -458,6 +449,15 @@ class Inventory3DPreview {
 
         this.resizeObserver?.disconnect();
         this.resizeObserver = null;
+
+        if (this.windowResizeHandler) {
+            window.removeEventListener(
+                "resize",
+                this.windowResizeHandler
+            );
+
+            this.windowResizeHandler = null;
+        }
 
         this.controls?.dispose();
         this.controls = null;
@@ -498,6 +498,7 @@ class Inventory3DPreview {
         this.camera = null;
         this.container = null;
         this.previewId = null;
+        this.bounds = null;
         this.initialized = false;
 
         this.destroying = false;
