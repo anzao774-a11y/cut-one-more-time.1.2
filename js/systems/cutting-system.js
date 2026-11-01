@@ -6,36 +6,142 @@ class CuttingSystem {
         this.lastResult = null;
 
         this.config = {
-            bladeThickness: 0.025
+            bladeThickness: 0.025,
+            tolerance: 1e-7
         };
     }
 
     validateMesh(mesh) {
-        if (!mesh || !Array.isArray(mesh.vertices) ||
-            !Array.isArray(mesh.faces)) {
+        if (
+            !mesh ||
+            !Array.isArray(mesh.vertices) ||
+            !Array.isArray(mesh.faces)
+        ) {
             throw new Error("模型資料格式錯誤");
         }
 
-        if (mesh.vertices.length < 4 || mesh.faces.length < 4) {
+        if (
+            mesh.vertices.length < 4 ||
+            mesh.faces.length < 4
+        ) {
             throw new Error("模型資料不足");
         }
 
         for (const vertex of mesh.vertices) {
-            if (!Array.isArray(vertex) || vertex.length !== 3 ||
-                !vertex.every(Number.isFinite)) {
+            if (
+                !Array.isArray(vertex) ||
+                vertex.length !== 3 ||
+                !vertex.every(Number.isFinite)
+            ) {
                 throw new Error("模型頂點資料無效");
             }
         }
 
         for (const face of mesh.faces) {
-            if (!Array.isArray(face) || face.length !== 3 ||
-                !face.every(index => Number.isInteger(index) &&
-                    index >= 0 && index < mesh.vertices.length)) {
+            if (
+                !Array.isArray(face) ||
+                face.length !== 3 ||
+                !face.every(index =>
+                    Number.isInteger(index) &&
+                    index >= 0 &&
+                    index < mesh.vertices.length
+                )
+            ) {
                 throw new Error("模型三角面資料無效");
             }
         }
 
         return true;
+    }
+
+    normalizePlane(plane) {
+        if (
+            !plane ||
+            !Array.isArray(plane.point) ||
+            !Array.isArray(plane.normal) ||
+            plane.point.length !== 3 ||
+            plane.normal.length !== 3 ||
+            !plane.point.every(Number.isFinite) ||
+            !plane.normal.every(Number.isFinite)
+        ) {
+            throw new Error("切割平面設定錯誤");
+        }
+
+        const length = Math.hypot(...plane.normal);
+
+        if (length < 1e-10) {
+            throw new Error("切割平面法線不可為零");
+        }
+
+        return {
+            point: [...plane.point],
+            normal: plane.normal.map(value => value / length)
+        };
+    }
+
+    signedDistance(vertex, plane) {
+        return geometryEngine.dot(
+            geometryEngine.subtract(vertex, plane.point),
+            plane.normal
+        );
+    }
+
+    classifyMesh(mesh, plane) {
+        this.validateMesh(mesh);
+
+        const distances = mesh.vertices.map(vertex =>
+            this.signedDistance(vertex, plane)
+        );
+
+        const tolerance = this.config.tolerance;
+
+        const positive = distances.some(
+            distance => distance > tolerance
+        );
+
+        const negative = distances.some(
+            distance => distance < -tolerance
+        );
+
+        const onPlane = distances.some(
+            distance => Math.abs(distance) <= tolerance
+        );
+
+        let classification;
+
+        if (positive && negative) {
+            classification = "crossing";
+        } else if (positive && onPlane) {
+            classification = "positive-touching";
+        } else if (negative && onPlane) {
+            classification = "negative-touching";
+        } else if (positive) {
+            classification = "positive";
+        } else if (negative) {
+            classification = "negative";
+        } else {
+            classification = "coplanar";
+        }
+
+        return {
+            classification,
+            positive,
+            negative,
+            onPlane,
+            minDistance: Math.min(...distances),
+            maxDistance: Math.max(...distances)
+        };
+    }
+
+    offsetPlane(plane, distance) {
+        return {
+            point: [
+                plane.point[0] + plane.normal[0] * distance,
+                plane.point[1] + plane.normal[1] * distance,
+                plane.point[2] + plane.normal[2] * distance
+            ],
+            normal: [...plane.normal]
+        };
     }
 
     calculateVolume(mesh) {
@@ -57,61 +163,38 @@ class CuttingSystem {
         return Math.abs(volume);
     }
 
-    offsetPlane(plane, distance) {
-        const normal = geometryEngine.normalize(plane.normal);
-
-        return {
-            point: [
-                plane.point[0] + normal[0] * distance,
-                plane.point[1] + normal[1] * distance,
-                plane.point[2] + normal[2] * distance
-            ],
-            normal
-        };
-    }
-
-    normalizePlane(plane) {
-        if (!plane || !Array.isArray(plane.point) ||
-            !Array.isArray(plane.normal) ||
-            plane.point.length !== 3 ||
-            plane.normal.length !== 3 ||
-            !plane.point.every(Number.isFinite) ||
-            !plane.normal.every(Number.isFinite)) {
-            throw new Error("切割平面設定錯誤");
-        }
-
-        const length = Math.hypot(...plane.normal);
-
-        if (length < 1e-10) {
-            throw new Error("切割平面法線不可為零");
-        }
-
-        return {
-            point: [...plane.point],
-            normal: plane.normal.map(v => v / length)
-        };
-    }
-
     cutStone(mesh, plane) {
         this.validateMesh(mesh);
 
-        if (!Number.isFinite(this.config.bladeThickness) ||
-            this.config.bladeThickness < 0) {
+        const normalized = this.normalizePlane(plane);
+
+        const thickness = this.config.bladeThickness;
+
+        if (!Number.isFinite(thickness) || thickness < 0) {
             throw new Error("刀片厚度設定錯誤");
         }
 
-        const normalized = this.normalizePlane(plane);
-        const normal = normalized.normal;
-        const half = this.config.bladeThickness / 2;
+        const classification = this.classifyMesh(
+            mesh,
+            normalized
+        );
+
+        if (classification.classification !== "crossing") {
+            throw new Error(
+                "切割平面沒有完整穿過原石，請調整切割位置。"
+            );
+        }
+
+        const halfThickness = thickness / 2;
 
         const positivePlane = this.offsetPlane(
             normalized,
-            half
+            halfThickness
         );
 
         const negativePlane = this.offsetPlane(
             normalized,
-            -half
+            -halfThickness
         );
 
         const positivePiece = geometryEngine.clipMesh(
@@ -123,7 +206,10 @@ class CuttingSystem {
             mesh,
             {
                 point: negativePlane.point,
-                normal: geometryEngine.scale(normal, -1)
+                normal: geometryEngine.scale(
+                    normalized.normal,
+                    -1
+                )
             }
         );
 
@@ -135,26 +221,35 @@ class CuttingSystem {
         const negativeVolume = this.calculateVolume(negativePiece);
 
         const removedVolume =
-            originalVolume - positiveVolume - negativeVolume;
+            originalVolume -
+            positiveVolume -
+            negativeVolume;
 
         if (removedVolume < -1e-6) {
             throw new Error(
-                "切割後體積超過原始體積，請檢查網格封口與面方向"
+                "切割結果體積超出原石體積，請檢查幾何封口。"
             );
         }
 
         const result = {
             positivePiece,
             negativePiece,
+
             originalVolume,
             positiveVolume,
             negativeVolume,
+
             removedVolume: Math.max(0, removedVolume),
-            bladeThickness: this.config.bladeThickness,
+
+            bladeThickness: thickness,
+
             cutPlane: {
                 point: [...normalized.point],
-                normal: [...normal]
+                normal: [...normalized.normal]
             },
+
+            classification,
+
             createdAt: Date.now()
         };
 
@@ -172,11 +267,20 @@ class CuttingSystem {
     }
 
     setBladeThickness(thickness) {
-        if (!Number.isFinite(thickness) || thickness < 0) {
-            throw new Error("刀片厚度必須大於或等於零");
+        if (
+            !Number.isFinite(thickness) ||
+            thickness < 0
+        ) {
+            throw new Error(
+                "刀片厚度必須大於或等於零"
+            );
         }
 
         this.config.bladeThickness = thickness;
+    }
+
+    getBladeThickness() {
+        return this.config.bladeThickness;
     }
 }
 
