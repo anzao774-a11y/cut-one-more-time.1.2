@@ -1,4 +1,3 @@
-// js/main.js
 
 import { saveManager } from "./core/save-manager.js";
 import { eventBus } from "./core/event-bus.js";
@@ -11,6 +10,9 @@ import { cuttingUI } from "./ui/cutting-ui.js";
 
 // 切割視覺強化模組
 import "./ui/cutting-result-visuals.js";
+
+// 背包切割剖面重建模組
+import "./ui/inventory-cut-surface.js";
 
 import { cuttingInventoryBridge } from "./ui/cutting-inventory-bridge.js";
 import { workshopUI } from "./ui/workshop-ui.js";
@@ -104,10 +106,6 @@ function initializeSaveData() {
         throw new Error("無法取得有效的遊戲存檔資料。");
     }
 
-    // ------------------------------
-    // 原石與物品資料
-    // ------------------------------
-
     const arrayFields = [
         "inventory",
         "collection",
@@ -123,31 +121,16 @@ function initializeSaveData() {
         }
     }
 
-
-    // ------------------------------
-    // 抽取保底資料
-    // ------------------------------
-
     saveData.gachaPity ??= {
         epic: 0,
         legendary: 0
     };
-
-
-    // ------------------------------
-    // 玩家資料
-    // ------------------------------
 
     saveData.player ??= {
         level: 1,
         exp: 0,
         totalExp: 0
     };
-
-
-    // ------------------------------
-    // 小黑貓資料
-    // ------------------------------
 
     saveData.cat ??= {
         affection: 0,
@@ -157,21 +140,11 @@ function initializeSaveData() {
         lastPremiumGift: null
     };
 
-
-    // ------------------------------
-    // 市場資料
-    // ------------------------------
-
     saveData.market ??= {
         lastRefresh: null,
         dailyEvent: null,
         transactionCount: 0
     };
-
-
-    // ------------------------------
-    // 統計資料
-    // ------------------------------
 
     saveData.statistics ??= {
         totalPulls: 0,
@@ -198,11 +171,6 @@ function initializeSaveData() {
             saveData.statistics[key] = value;
         }
     }
-
-
-    // ------------------------------
-    // 金幣資料
-    // ------------------------------
 
     if (!Number.isFinite(Number(saveData.gold))) {
         saveData.gold = 0;
@@ -341,11 +309,6 @@ function initializeGame() {
     console.log("再切一刀就好：開始初始化");
     console.log("================================");
 
-
-    // ------------------------------
-    // 1. 載入存檔
-    // ------------------------------
-
     let saveData;
 
     try {
@@ -364,120 +327,60 @@ function initializeGame() {
         return;
     }
 
-
-    // ------------------------------
-    // 2. 保存初始化資料
-    // ------------------------------
-
     initializeSafely(
         "存檔保存",
         initializeSave
     );
-
-
-    // ------------------------------
-    // 3. 全域事件
-    // ------------------------------
 
     initializeSafely(
         "全域事件",
         () => initializeGlobalEvents(saveData)
     );
 
-
-    // ------------------------------
-    // 4. 工坊進度
-    // ------------------------------
-
     initializeSafely(
         "工坊進度",
         initializeProgression
     );
-
-
-    // ------------------------------
-    // 5. 音效系統
-    // ------------------------------
 
     initializeSafely(
         "音效系統",
         initializeAudio
     );
 
-
-    // ------------------------------
-    // 6. 頁面導覽
-    // ------------------------------
-
     initializeSafely(
         "頁面導覽",
         () => navigation.init()
     );
-
-
-    // ------------------------------
-    // 7. 原石抽取
-    // ------------------------------
 
     initializeSafely(
         "原石抽取",
         () => gachaUI.init()
     );
 
-
-    // ------------------------------
-    // 8. 工坊設定
-    // ------------------------------
-
     initializeSafely(
         "工坊設定",
         () => settingsUI.init()
     );
-
-
-    // ------------------------------
-    // 9. 原石背包
-    // ------------------------------
 
     initializeSafely(
         "原石背包",
         () => inventoryUI.init()
     );
 
-
-    // ------------------------------
-    // 10. 切割工作台
-    // ------------------------------
-
     const cuttingInitialized = initializeSafely(
         "切割工作台",
         () => cuttingUI.init()
     );
-
-
-    // ------------------------------
-    // 11. 背包與切割工作台連接
-    // ------------------------------
 
     initializeSafely(
         "背包與切割工作台連接",
         () => cuttingInventoryBridge.init()
     );
 
-
-    // ------------------------------
-    // 12. 工坊其他功能
-    // ------------------------------
-
     initializeSafely(
         "工坊其他功能",
         () => workshopUI.init()
     );
-
-
-    // ------------------------------
-    // 13. 完成初始化
-    // ------------------------------
 
     console.log("================================");
 
