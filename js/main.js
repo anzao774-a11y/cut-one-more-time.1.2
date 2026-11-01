@@ -14,6 +14,9 @@ import "./ui/cutting-result-visuals.js";
 // 背包切割剖面重建模組
 import "./ui/inventory-cut-surface.js";
 
+// 多次切割歷史、玉料實際體積與材質
+import "./ui/cutting-persistence.js";
+
 import { cuttingInventoryBridge } from "./ui/cutting-inventory-bridge.js";
 import { workshopUI } from "./ui/workshop-ui.js";
 
