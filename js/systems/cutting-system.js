@@ -1,4 +1,3 @@
-// js/systems/cutting-system.js
 
 import { geometryEngine } from "./geometry-engine.js?version=3";
 
@@ -12,12 +11,9 @@ class CuttingSystem {
     }
 
     validateMesh(mesh) {
-        if (!mesh || !Array.isArray(mesh.vertices)) {
-            throw new Error("缺少模型頂點資料");
-        }
-
-        if (!Array.isArray(mesh.faces)) {
-            throw new Error("缺少模型面資料");
+        if (!mesh || !Array.isArray(mesh.vertices) ||
+            !Array.isArray(mesh.faces)) {
+            throw new Error("模型資料格式錯誤");
         }
 
         if (mesh.vertices.length < 4 || mesh.faces.length < 4) {
@@ -25,26 +21,17 @@ class CuttingSystem {
         }
 
         for (const vertex of mesh.vertices) {
-            if (
-                !Array.isArray(vertex) ||
-                vertex.length !== 3 ||
-                !vertex.every(Number.isFinite)
-            ) {
+            if (!Array.isArray(vertex) || vertex.length !== 3 ||
+                !vertex.every(Number.isFinite)) {
                 throw new Error("模型頂點資料無效");
             }
         }
 
         for (const face of mesh.faces) {
-            if (
-                !Array.isArray(face) ||
-                face.length !== 3 ||
-                !face.every(index =>
-                    Number.isInteger(index) &&
-                    index >= 0 &&
-                    index < mesh.vertices.length
-                )
-            ) {
-                throw new Error("模型面資料無效");
+            if (!Array.isArray(face) || face.length !== 3 ||
+                !face.every(index => Number.isInteger(index) &&
+                    index >= 0 && index < mesh.vertices.length)) {
+                throw new Error("模型三角面資料無效");
             }
         }
 
@@ -52,6 +39,8 @@ class CuttingSystem {
     }
 
     calculateVolume(mesh) {
+        this.validateMesh(mesh);
+
         let volume = 0;
 
         for (const face of mesh.faces) {
@@ -81,40 +70,47 @@ class CuttingSystem {
         };
     }
 
-    cutStone(mesh, plane) {
-        this.validateMesh(mesh);
-
-        if (
-            !plane ||
-            !Array.isArray(plane.point) ||
+    normalizePlane(plane) {
+        if (!plane || !Array.isArray(plane.point) ||
             !Array.isArray(plane.normal) ||
             plane.point.length !== 3 ||
             plane.normal.length !== 3 ||
             !plane.point.every(Number.isFinite) ||
-            !plane.normal.every(Number.isFinite)
-        ) {
+            !plane.normal.every(Number.isFinite)) {
             throw new Error("切割平面設定錯誤");
         }
 
-        if (
-            !Number.isFinite(this.config.bladeThickness) ||
-            this.config.bladeThickness < 0
-        ) {
+        const length = Math.hypot(...plane.normal);
+
+        if (length < 1e-10) {
+            throw new Error("切割平面法線不可為零");
+        }
+
+        return {
+            point: [...plane.point],
+            normal: plane.normal.map(v => v / length)
+        };
+    }
+
+    cutStone(mesh, plane) {
+        this.validateMesh(mesh);
+
+        if (!Number.isFinite(this.config.bladeThickness) ||
+            this.config.bladeThickness < 0) {
             throw new Error("刀片厚度設定錯誤");
         }
 
-        const normal = geometryEngine.normalize(plane.normal);
+        const normalized = this.normalizePlane(plane);
+        const normal = normalized.normal;
         const half = this.config.bladeThickness / 2;
 
-        // 正側保留切割平面正方向的材料。
         const positivePlane = this.offsetPlane(
-            { point: plane.point, normal },
+            normalized,
             half
         );
 
-        // 負側保留切割平面負方向的材料。
         const negativePlane = this.offsetPlane(
-            { point: plane.point, normal },
+            normalized,
             -half
         );
 
@@ -143,7 +139,7 @@ class CuttingSystem {
 
         if (removedVolume < -1e-6) {
             throw new Error(
-                "切割後體積超過原始體積，請檢查模型封口或面方向"
+                "切割後體積超過原始體積，請檢查網格封口與面方向"
             );
         }
 
@@ -156,7 +152,7 @@ class CuttingSystem {
             removedVolume: Math.max(0, removedVolume),
             bladeThickness: this.config.bladeThickness,
             cutPlane: {
-                point: [...plane.point],
+                point: [...normalized.point],
                 normal: [...normal]
             },
             createdAt: Date.now()
