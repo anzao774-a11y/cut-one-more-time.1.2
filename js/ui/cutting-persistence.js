@@ -1,4 +1,5 @@
 
+import * as THREE from "three";
 import { cuttingUI } from "./cutting-ui.js";
 
 
@@ -60,12 +61,10 @@ function getSidePlane(result, side) {
                 direction
         ),
 
-        // 統一使用保留區域朝向的法線。
         normal: side === "positive"
             ? normal
             : normal.map(value => -value),
 
-        // 保留區域外側的方向。
         outwardNormal: side === "positive"
             ? normal.map(value => -value)
             : [...normal]
@@ -314,7 +313,6 @@ function createHistoryEntry(
         ),
 
         kind,
-
         jadeType,
 
         outwardNormal: [
@@ -396,12 +394,256 @@ function updateJadeHistory(
 
 
 // ======================================================
+// 重建已保存的歷史剖面
+// ======================================================
+
+function createHistorySurface(entry, name) {
+    if (
+        !entry ||
+        !Array.isArray(entry.triangles) ||
+        entry.triangles.length === 0
+    ) {
+        return null;
+    }
+
+    const normalArray =
+        Array.isArray(entry.outwardNormal) &&
+        entry.outwardNormal.length === 3 &&
+        entry.outwardNormal.every(Number.isFinite)
+            ? normalize(entry.outwardNormal)
+            : [0, 1, 0];
+
+    const normal = new THREE.Vector3(
+        normalArray[0],
+        normalArray[1],
+        normalArray[2]
+    );
+
+    const positions = [];
+
+    const offset =
+        entry.kind === "jade"
+            ? 0.0025
+            : 0.0015;
+
+    for (const triangle of entry.triangles) {
+        if (
+            !Array.isArray(triangle) ||
+            triangle.length !== 3
+        ) {
+            continue;
+        }
+
+        for (const vertex of triangle) {
+            if (
+                !Array.isArray(vertex) ||
+                vertex.length !== 3 ||
+                !vertex.every(Number.isFinite)
+            ) {
+                continue;
+            }
+
+            positions.push(
+                vertex[0] + normal.x * offset,
+                vertex[1] + normal.y * offset,
+                vertex[2] + normal.z * offset
+            );
+        }
+    }
+
+    if (
+        positions.length < 9 ||
+        positions.length % 9 !== 0
+    ) {
+        return null;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+
+    geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(
+            positions,
+            3
+        )
+    );
+
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    const isJade = entry.kind === "jade";
+
+    const color = isJade
+        ? cuttingUI.getJadeColor(entry.jadeType)
+        : "#77796b";
+
+    const material = new THREE.MeshStandardMaterial({
+        color,
+        roughness: isJade ? 0.42 : 0.92,
+        metalness: isJade ? 0.015 : 0,
+        side: THREE.DoubleSide,
+        transparent: false,
+        opacity: 1,
+        depthWrite: true,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
+    });
+
+    const surface = new THREE.Mesh(
+        geometry,
+        material
+    );
+
+    surface.name = name;
+
+    surface.userData.ownsMaterial = true;
+    surface.userData.isSavedCutHistory = true;
+    surface.userData.jadeType = entry.jadeType ?? null;
+
+    surface.renderOrder = isJade ? 4 : 3;
+
+    return surface;
+}
+
+
+function restoreCutHistory() {
+    const stone = this.currentStone;
+
+    if (
+        !stone ||
+        !this.originalGroup
+    ) {
+        return {
+            stone: 0,
+            jade: 0
+        };
+    }
+
+    const historyGroup = new THREE.Group();
+
+    historyGroup.name = "已保存的歷史切面";
+
+    let stoneCount = 0;
+    let jadeCount = 0;
+
+    // 原石歷史切面
+    const stoneHistory = Array.isArray(stone.cutHistory)
+        ? stone.cutHistory
+        : [];
+
+    for (const entry of stoneHistory) {
+        if (entry.kind !== "stone") {
+            continue;
+        }
+
+        const surface = createHistorySurface(
+            entry,
+            "歷史石質剖面"
+        );
+
+        if (!surface) {
+            continue;
+        }
+
+        historyGroup.add(surface);
+        stoneCount++;
+    }
+
+    // 每一塊玉料的歷史切面
+    const masses = Array.isArray(stone.jadeData?.masses)
+        ? stone.jadeData.masses
+        : [];
+
+    for (const mass of masses) {
+        const jadeHistory = Array.isArray(mass.cutHistory)
+            ? mass.cutHistory
+            : [];
+
+        for (const entry of jadeHistory) {
+            if (entry.kind !== "jade") {
+                continue;
+            }
+
+            const surface = createHistorySurface(
+                entry,
+                `${mass.name ?? "玉料"}歷史玉肉剖面`
+            );
+
+            if (!surface) {
+                continue;
+            }
+
+            historyGroup.add(surface);
+            jadeCount++;
+        }
+    }
+
+    if (historyGroup.children.length > 0) {
+        this.originalGroup.add(historyGroup);
+    }
+
+    console.log(
+        "[切割工作台] 已恢復歷史切面：",
+        {
+            stone: stoneCount,
+            jade: jadeCount,
+            stoneId: stone.id
+        }
+    );
+
+    return {
+        stone: stoneCount,
+        jade: jadeCount
+    };
+}
+
+
+// ======================================================
+// 接入原本的工作台載入流程
+// ======================================================
+
+const originalLoadOriginalStone =
+    cuttingUI.loadOriginalStone;
+
+cuttingUI.loadOriginalStone = function (...args) {
+    const result = originalLoadOriginalStone.apply(
+        this,
+        args
+    );
+
+    restoreCutHistory.call(this);
+
+    return result;
+};
+
+
+// 切割結果畫面切回原石檢視時，也重新顯示歷史剖面。
+
+const originalShowOriginal =
+    cuttingUI.showOriginal;
+
+if (typeof originalShowOriginal === "function") {
+    cuttingUI.showOriginal = function (...args) {
+        const result = originalShowOriginal.apply(
+            this,
+            args
+        );
+
+        restoreCutHistory.call(this);
+
+        return result;
+    };
+}
+
+
+// ======================================================
 // 保存石質剖面與玉肉剖面
 // ======================================================
 
 const originalCreateInventoryRecord =
     cuttingUI.createInventoryRecord;
-
 
 cuttingUI.createInventoryRecord = function (
     mesh,
@@ -410,7 +652,6 @@ cuttingUI.createInventoryRecord = function (
     sourceStone,
     jadeData
 ) {
-    // 先完全交由原始方法建立背包紀錄。
     const record = originalCreateInventoryRecord.call(
         this,
         mesh,
@@ -451,7 +692,7 @@ cuttingUI.createInventoryRecord = function (
     record.cutHistory = history;
     record.cutHistoryVersion = 2;
 
-    // 玉肉使用原始 splitJadeData 已經產生的幾何。
+    // 玉肉使用原本切割流程產生的幾何。
     // 不重新定位、不重新縮放、不再次切割。
     updateJadeHistory(
         record.jadeData,
@@ -465,5 +706,5 @@ cuttingUI.createInventoryRecord = function (
 
 
 console.log(
-    "[切割持久化] 已載入剖面歷史紀錄，原始玉料定位與切割流程保持不變。"
+    "[切割持久化] 歷史剖面保存與工作台重建模組已載入。"
 );
