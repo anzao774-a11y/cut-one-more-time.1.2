@@ -1,6 +1,4 @@
 
-// js/ui/cutting-result-visuals.js
-
 import * as THREE from "three";
 
 import { cuttingUI } from "./cutting-ui.js";
@@ -22,8 +20,8 @@ const VISUAL_CONFIG = {
 
     planeTolerance: 0.00001,
 
-    stoneRoughness: 0.96,
-    jadeRoughness: 0.48,
+    stoneRoughness: 0.97,
+    jadeRoughness: 0.5,
 
     textureSize: 512,
 
@@ -39,7 +37,6 @@ const VISUAL_CONFIG = {
 
 function hashString(value) {
     let hash = 2166136261;
-
     const text = String(value);
 
     for (let i = 0; i < text.length; i++) {
@@ -118,7 +115,7 @@ function getPlaneDistance(vertex, plane) {
 
 
 // ==========================================
-// 建立切面座標基準
+// 切面座標基準
 // ==========================================
 
 function createPlaneBasis(normal) {
@@ -163,33 +160,31 @@ function projectPoint(point, basis) {
 // ==========================================
 
 function extractPlaneTriangles(mesh, plane) {
-    const geometry = mesh;
-
     if (
-        !geometry ||
-        !Array.isArray(geometry.vertices) ||
-        !Array.isArray(geometry.faces)
+        !mesh ||
+        !Array.isArray(mesh.vertices) ||
+        !Array.isArray(mesh.faces)
     ) {
         return [];
     }
 
     const triangles = [];
 
-    for (const face of geometry.faces) {
+    for (const face of mesh.faces) {
         if (
             !Array.isArray(face) ||
             face.length !== 3 ||
             !face.every(index =>
                 Number.isInteger(index) &&
                 index >= 0 &&
-                index < geometry.vertices.length
+                index < mesh.vertices.length
             )
         ) {
             continue;
         }
 
         const vertices = face.map(
-            index => geometry.vertices[index]
+            index => mesh.vertices[index]
         );
 
         if (
@@ -221,7 +216,7 @@ function extractPlaneTriangles(mesh, plane) {
 
 
 // ==========================================
-// 計算兩側共用的切面 UV 範圍
+// 計算兩側共用的 UV 範圍
 // ==========================================
 
 function calculateProjectedBounds(triangleSets, basis) {
@@ -298,6 +293,7 @@ function calculateUV(point, basis, bounds) {
 
 // ==========================================
 // 建立石質剖面紋理
+// 不加入綠色玉脈
 // ==========================================
 
 function createStoneMatrixCanvas(seed) {
@@ -312,33 +308,51 @@ function createStoneMatrixCanvas(seed) {
 
     const random = createSeededRandom(seed);
 
-    // 基底：灰白、灰綠、褐灰色的石質色調。
+    // 灰白、灰綠、褐灰色基底。
 
-    ctx.fillStyle = "#999b88";
+    const baseColors = [
+        "#a6a594",
+        "#999b8c",
+        "#85897e",
+        "#aaa695",
+        "#858477"
+    ];
+
+    ctx.fillStyle = baseColors[
+        Math.floor(random() * baseColors.length)
+    ];
+
     ctx.fillRect(0, 0, size, size);
 
 
     // --------------------------------------
-    // 大面積礦物雲霧
+    // 第一層：大面積礦物雲霧
     // --------------------------------------
 
     const cloudyColors = [
-        "rgba(202, 199, 174, 0.58)",
-        "rgba(177, 181, 157, 0.48)",
-        "rgba(112, 125, 103, 0.34)",
-        "rgba(78, 91, 73, 0.26)",
-        "rgba(125, 112, 91, 0.23)",
-        "rgba(217, 211, 185, 0.35)"
+        "rgba(220,216,194,0.48)",
+        "rgba(190,190,171,0.42)",
+        "rgba(143,153,137,0.38)",
+        "rgba(111,119,105,0.30)",
+        "rgba(124,112,96,0.27)",
+        "rgba(207,199,175,0.35)",
+        "rgba(77,85,77,0.20)"
     ];
 
-    for (let i = 0; i < 95; i++) {
+    for (let i = 0; i < 125; i++) {
         const x = random() * size;
         const y = random() * size;
 
-        const radius = randomBetween(
+        const radiusX = randomBetween(
             random,
-            12,
-            105
+            18,
+            130
+        );
+
+        const radiusY = radiusX * randomBetween(
+            random,
+            0.35,
+            1.15
         );
 
         const gradient = ctx.createRadialGradient(
@@ -347,7 +361,7 @@ function createStoneMatrixCanvas(seed) {
             0,
             x,
             y,
-            radius
+            radiusX
         );
 
         const color = cloudyColors[
@@ -355,40 +369,41 @@ function createStoneMatrixCanvas(seed) {
         ];
 
         gradient.addColorStop(0, color);
-        gradient.addColorStop(1, "rgba(120,125,105,0)");
+        gradient.addColorStop(1, "rgba(130,130,115,0)");
 
         ctx.fillStyle = gradient;
+
+        ctx.save();
+
+        ctx.translate(x, y);
+        ctx.rotate(random() * Math.PI);
+
+        ctx.scale(
+            1,
+            radiusY / radiusX
+        );
 
         ctx.beginPath();
 
         ctx.arc(
-            x,
-            y,
-            radius,
+            0,
+            0,
+            radiusX,
             0,
             Math.PI * 2
         );
 
         ctx.fill();
+
+        ctx.restore();
     }
 
 
     // --------------------------------------
-    // 不規則綠色玉質色帶
+    // 第二層：褐灰色礦物帶
     // --------------------------------------
 
-    const greenColors = [
-        "rgba(37, 91, 58, 0.42)",
-        "rgba(65, 119, 77, 0.38)",
-        "rgba(89, 139, 91, 0.35)",
-        "rgba(27, 74, 47, 0.31)",
-        "rgba(122, 153, 106, 0.34)"
-    ];
-
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 15; i++) {
         let x = random() * size;
         let y = random() * size;
 
@@ -402,31 +417,23 @@ function createStoneMatrixCanvas(seed) {
         for (let j = 0; j < segments; j++) {
             const nextX = x + randomBetween(
                 random,
-                -100,
-                100
+                -110,
+                110
             );
 
             const nextY = y + randomBetween(
                 random,
-                -70,
-                70
+                -75,
+                75
             );
 
-            const controlX = (
-                x + nextX
-            ) / 2 + randomBetween(
-                random,
-                -45,
-                45
-            );
+            const controlX =
+                (x + nextX) / 2 +
+                randomBetween(random, -45, 45);
 
-            const controlY = (
-                y + nextY
-            ) / 2 + randomBetween(
-                random,
-                -45,
-                45
-            );
+            const controlY =
+                (y + nextY) / 2 +
+                randomBetween(random, -35, 35);
 
             ctx.quadraticCurveTo(
                 controlX,
@@ -439,48 +446,40 @@ function createStoneMatrixCanvas(seed) {
             y = nextY;
         }
 
-        ctx.strokeStyle = greenColors[
-            Math.floor(random() * greenColors.length)
-        ];
+        ctx.strokeStyle = random() > 0.5
+            ? "rgba(91,88,75,0.20)"
+            : "rgba(224,217,195,0.28)";
 
         ctx.lineWidth = randomBetween(
             random,
-            8,
-            35
-        );
-
-        ctx.shadowColor = "rgba(35, 78, 48, 0.35)";
-        ctx.shadowBlur = randomBetween(
-            random,
-            8,
-            20
+            2,
+            12
         );
 
         ctx.stroke();
     }
 
-    ctx.shadowBlur = 0;
-
 
     // --------------------------------------
-    // 深色礦物斑點
+    // 第三層：深色礦物斑點
     // --------------------------------------
 
     const darkColors = [
-        "rgba(35, 43, 35, 0.55)",
-        "rgba(53, 57, 43, 0.46)",
-        "rgba(82, 72, 56, 0.38)",
-        "rgba(45, 62, 47, 0.45)"
+        "rgba(39,45,39,0.58)",
+        "rgba(55,58,48,0.48)",
+        "rgba(83,72,57,0.42)",
+        "rgba(66,76,68,0.45)",
+        "rgba(48,52,44,0.35)"
     ];
 
-    for (let i = 0; i < 420; i++) {
+    for (let i = 0; i < 520; i++) {
         const x = random() * size;
         const y = random() * size;
 
         const radius = randomBetween(
             random,
             0.5,
-            3.4
+            3.8
         );
 
         ctx.fillStyle = darkColors[
@@ -492,8 +491,8 @@ function createStoneMatrixCanvas(seed) {
         ctx.ellipse(
             x,
             y,
-            radius * randomBetween(random, 0.7, 1.8),
-            radius,
+            radius * randomBetween(random, 0.7, 2.2),
+            radius * randomBetween(random, 0.5, 1.3),
             random() * Math.PI,
             0,
             Math.PI * 2
@@ -504,22 +503,22 @@ function createStoneMatrixCanvas(seed) {
 
 
     // --------------------------------------
-    // 淺色礦物顆粒
+    // 第四層：淺色礦物顆粒
     // --------------------------------------
 
-    for (let i = 0; i < 1500; i++) {
+    for (let i = 0; i < 1900; i++) {
         const x = random() * size;
         const y = random() * size;
 
         const radius = randomBetween(
             random,
             0.3,
-            1.5
+            1.8
         );
 
         ctx.fillStyle = random() > 0.5
-            ? "rgba(229, 226, 204, 0.32)"
-            : "rgba(71, 78, 64, 0.2)";
+            ? "rgba(239,235,214,0.38)"
+            : "rgba(61,68,59,0.18)";
 
         ctx.beginPath();
 
@@ -536,10 +535,10 @@ function createStoneMatrixCanvas(seed) {
 
 
     // --------------------------------------
-    // 細微裂隙與礦物紋路
+    // 第五層：細微裂隙
     // --------------------------------------
 
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 30; i++) {
         let x = random() * size;
         let y = random() * size;
 
@@ -547,24 +546,24 @@ function createStoneMatrixCanvas(seed) {
         ctx.moveTo(x, y);
 
         const segments = Math.floor(
-            randomBetween(random, 2, 5)
+            randomBetween(random, 2, 6)
         );
 
         for (let j = 0; j < segments; j++) {
-            x += randomBetween(random, -35, 35);
-            y += randomBetween(random, -35, 35);
+            x += randomBetween(random, -40, 40);
+            y += randomBetween(random, -40, 40);
 
             ctx.lineTo(x, y);
         }
 
         ctx.strokeStyle = random() > 0.5
-            ? "rgba(46, 48, 39, 0.25)"
-            : "rgba(220, 216, 191, 0.25)";
+            ? "rgba(44,47,39,0.25)"
+            : "rgba(230,225,202,0.28)";
 
         ctx.lineWidth = randomBetween(
             random,
             0.4,
-            1.4
+            1.6
         );
 
         ctx.stroke();
@@ -575,7 +574,8 @@ function createStoneMatrixCanvas(seed) {
 
 
 // ==========================================
-// 建立玉肉本身的色澤紋理
+// 建立玉肉剖面紋理
+// 綠色雲霧、色帶與深色包裹體
 // ==========================================
 
 function createJadeCanvas(baseColor, seed) {
@@ -593,40 +593,51 @@ function createJadeCanvas(baseColor, seed) {
     const base = new THREE.Color(baseColor);
 
     const lighter = base.clone().lerp(
-        new THREE.Color("#ffffff"),
-        0.28
+        new THREE.Color("#d8e5cf"),
+        0.36
     );
 
     const darker = base.clone().lerp(
-        new THREE.Color("#18251b"),
-        0.42
+        new THREE.Color("#173b29"),
+        0.55
+    );
+
+    const deep = base.clone().lerp(
+        new THREE.Color("#10271d"),
+        0.72
     );
 
     const baseStyle = `#${base.getHexString()}`;
     const lightStyle = `#${lighter.getHexString()}`;
     const darkStyle = `#${darker.getHexString()}`;
+    const deepStyle = `#${deep.getHexString()}`;
 
     ctx.fillStyle = baseStyle;
 
-    ctx.fillRect(
-        0,
-        0,
-        size,
-        size
-    );
+    ctx.fillRect(0, 0, size, size);
 
 
-    // 不規則色塊與雲霧。
+    // --------------------------------------
+    // 第一層：不規則玉質雲霧
+    // --------------------------------------
 
-    for (let i = 0; i < 65; i++) {
+    for (let i = 0; i < 95; i++) {
         const x = random() * size;
         const y = random() * size;
 
-        const radius = randomBetween(
+        const radiusX = randomBetween(
             random,
-            10,
-            100
+            12,
+            105
         );
+
+        const radiusY = radiusX * randomBetween(
+            random,
+            0.3,
+            1.0
+        );
+
+        const useLight = random() > 0.52;
 
         const gradient = ctx.createRadialGradient(
             x,
@@ -634,10 +645,8 @@ function createJadeCanvas(baseColor, seed) {
             0,
             x,
             y,
-            radius
+            radiusX
         );
-
-        const useLight = random() > 0.48;
 
         gradient.addColorStop(
             0,
@@ -647,17 +656,172 @@ function createJadeCanvas(baseColor, seed) {
         );
 
         gradient.addColorStop(
+            0.65,
+            useLight
+                ? `rgba(180,205,165,0.28)`
+                : `rgba(24,60,39,0.30)`
+        );
+
+        gradient.addColorStop(
             1,
-            "rgba(100,120,100,0)"
+            "rgba(70,100,75,0)"
+        );
+
+        ctx.save();
+
+        ctx.translate(x, y);
+        ctx.rotate(random() * Math.PI);
+
+        ctx.scale(
+            1,
+            radiusY / radiusX
         );
 
         ctx.globalAlpha = randomBetween(
             random,
-            0.08,
-            0.32
+            0.12,
+            0.38
         );
 
         ctx.fillStyle = gradient;
+
+        ctx.beginPath();
+
+        ctx.arc(
+            0,
+            0,
+            radiusX,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    ctx.globalAlpha = 1;
+
+
+    // --------------------------------------
+    // 第二層：天然不規則色帶
+    // --------------------------------------
+
+    for (let i = 0; i < 7; i++) {
+        let x = randomBetween(random, -80, 80);
+        let y = random() * size;
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+
+        const segments = Math.floor(
+            randomBetween(random, 3, 7)
+        );
+
+        for (let j = 0; j < segments; j++) {
+            const nextX = x + randomBetween(
+                random,
+                55,
+                145
+            );
+
+            const nextY = y + randomBetween(
+                random,
+                -85,
+                85
+            );
+
+            const controlX =
+                (x + nextX) / 2 +
+                randomBetween(random, -45, 45);
+
+            const controlY =
+                (y + nextY) / 2 +
+                randomBetween(random, -50, 50);
+
+            ctx.quadraticCurveTo(
+                controlX,
+                controlY,
+                nextX,
+                nextY
+            );
+
+            x = nextX;
+            y = nextY;
+        }
+
+        ctx.strokeStyle = random() > 0.5
+            ? `rgba(220,235,204,${randomBetween(random, 0.08, 0.19)})`
+            : `rgba(13,45,27,${randomBetween(random, 0.12, 0.27)})`;
+
+        ctx.lineWidth = randomBetween(
+            random,
+            7,
+            28
+        );
+
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        ctx.stroke();
+    }
+
+
+    // --------------------------------------
+    // 第三層：深色礦物包裹體
+    // --------------------------------------
+
+    for (let i = 0; i < 100; i++) {
+        const x = random() * size;
+        const y = random() * size;
+
+        const radius = randomBetween(
+            random,
+            1,
+            6
+        );
+
+        ctx.fillStyle = random() > 0.5
+            ? `rgba(20,35,25,${randomBetween(random, 0.15, 0.42)})`
+            : `rgba(65,73,54,${randomBetween(random, 0.12, 0.28)})`;
+
+        ctx.beginPath();
+
+        ctx.ellipse(
+            x,
+            y,
+            radius * randomBetween(random, 0.7, 2.5),
+            radius * randomBetween(random, 0.45, 1.2),
+            random() * Math.PI,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+    }
+
+
+    // --------------------------------------
+    // 第四層：玉質細微顆粒
+    // --------------------------------------
+
+    for (let i = 0; i < 2200; i++) {
+        const x = random() * size;
+        const y = random() * size;
+
+        const radius = randomBetween(
+            random,
+            0.25,
+            1.4
+        );
+
+        const choice = random();
+
+        ctx.fillStyle = choice > 0.68
+            ? "rgba(240,246,226,0.18)"
+            : choice > 0.32
+                ? "rgba(15,39,24,0.16)"
+                : "rgba(112,151,104,0.14)";
 
         ctx.beginPath();
 
@@ -673,75 +837,6 @@ function createJadeCanvas(baseColor, seed) {
     }
 
     ctx.globalAlpha = 1;
-
-
-    // 柔和色帶。
-
-    for (let i = 0; i < 5; i++) {
-        const y = random() * size;
-
-        ctx.beginPath();
-
-        ctx.moveTo(
-            -30,
-            y
-        );
-
-        ctx.bezierCurveTo(
-            size * 0.25,
-            y + randomBetween(random, -100, 100),
-            size * 0.7,
-            y + randomBetween(random, -100, 100),
-            size + 30,
-            y + randomBetween(random, -70, 70)
-        );
-
-        ctx.strokeStyle = random() > 0.5
-            ? `rgba(255,255,255,${randomBetween(random, 0.08, 0.2)})`
-            : `rgba(15,35,20,${randomBetween(random, 0.08, 0.18)})`;
-
-        ctx.lineWidth = randomBetween(
-            random,
-            5,
-            25
-        );
-
-        ctx.shadowBlur = 12;
-
-        ctx.stroke();
-    }
-
-    ctx.shadowBlur = 0;
-
-
-    // 細微顆粒。
-
-    for (let i = 0; i < 1800; i++) {
-        const x = random() * size;
-        const y = random() * size;
-
-        const radius = randomBetween(
-            random,
-            0.3,
-            1.4
-        );
-
-        ctx.fillStyle = random() > 0.5
-            ? "rgba(255,255,255,0.16)"
-            : "rgba(10,25,15,0.13)";
-
-        ctx.beginPath();
-
-        ctx.arc(
-            x,
-            y,
-            radius,
-            0,
-            Math.PI * 2
-        );
-
-        ctx.fill();
-    }
 
     return canvas;
 }
@@ -760,7 +855,6 @@ function createCanvasTexture(canvas) {
     texture.wrapT = THREE.ClampToEdgeWrapping;
 
     texture.anisotropy = 4;
-
     texture.needsUpdate = true;
 
     return texture;
@@ -773,7 +867,6 @@ function createCanvasTexture(canvas) {
 
 function createTexturedSurface(
     triangles,
-    plane,
     outwardNormal,
     basis,
     bounds,
@@ -855,12 +948,10 @@ function createTexturedSurface(
 
 function createStoneCutMaterial(seed) {
     const canvas = createStoneMatrixCanvas(seed);
-
     const texture = createCanvasTexture(canvas);
 
     return new THREE.MeshStandardMaterial({
         color: 0xffffff,
-
         map: texture,
 
         roughness: VISUAL_CONFIG.stoneRoughness,
@@ -892,7 +983,6 @@ function createJadeCutMaterial(color, seed) {
 
     return new THREE.MeshStandardMaterial({
         color: 0xffffff,
-
         map: texture,
 
         roughness: VISUAL_CONFIG.jadeRoughness,
@@ -977,7 +1067,8 @@ function createCutPlanes(result) {
 
 
 // ==========================================
-// 原石內部玉肉自然定位
+// 建立天然玉脈的空間分布
+// 不再依照陣列順序排成直線
 // ==========================================
 
 function createNaturalJadePlacement(
@@ -986,6 +1077,8 @@ function createNaturalJadePlacement(
     index,
     hostBounds
 ) {
+    // 已經定位並存檔的玉料保留原座標。
+
     if (mass.placementApplied && mass.geometry) {
         return {
             geometry: structuredClone(mass.geometry),
@@ -996,7 +1089,8 @@ function createNaturalJadePlacement(
     if (
         !mass?.geometry ||
         !Array.isArray(mass.geometry.vertices) ||
-        !Array.isArray(mass.geometry.faces)
+        !Array.isArray(mass.geometry.faces) ||
+        mass.geometry.vertices.length === 0
     ) {
         throw new Error(
             `玉料「${mass?.name ?? index}」原始幾何資料無效。`
@@ -1009,7 +1103,7 @@ function createNaturalJadePlacement(
         "jade-stone";
 
     const sourceSeed = hashString(
-        `${sourceId}|natural-jade-deposit`
+        `${sourceId}|natural-jade-deposit-v2`
     );
 
     const sourceRandom = createSeededRandom(
@@ -1017,7 +1111,7 @@ function createNaturalJadePlacement(
     );
 
     const massSeed = hashString(
-        `${sourceId}|${mass.id ?? index}|shape`
+        `${sourceId}|${mass.id ?? index}|natural-shape-v2`
     );
 
     const random = createSeededRandom(
@@ -1033,7 +1127,7 @@ function createNaturalJadePlacement(
 
 
     // --------------------------------------
-    // 建立同一塊原石共用的玉脈方向
+    // 原石共用的主要玉脈方向
     // --------------------------------------
 
     const baseRotation = new THREE.Euler(
@@ -1062,7 +1156,108 @@ function createNaturalJadePlacement(
 
 
     // --------------------------------------
-    // 將原本偏圓的玉料拉成不規則透鏡狀
+    // 建立 2 至 3 個玉肉聚集區
+    // --------------------------------------
+
+    const clusterCount = Math.min(
+        count,
+        count >= 5 ? 3 : count >= 2 ? 2 : 1
+    );
+
+    const clusters = [];
+
+    for (let i = 0; i < clusterCount; i++) {
+        const progress = clusterCount <= 1
+            ? 0
+            : (i / (clusterCount - 1)) - 0.5;
+
+        const along = progress * 0.34 +
+            randomBetween(sourceRandom, -0.045, 0.045);
+
+        const side = randomBetween(
+            sourceRandom,
+            -0.105,
+            0.105
+        );
+
+        const depth = randomBetween(
+            sourceRandom,
+            -0.09,
+            0.09
+        );
+
+        clusters.push({
+            position: [
+                0.5 +
+                    depositAxis.x * along +
+                    perpendicular.x * side +
+                    secondary.x * depth,
+
+                0.5 +
+                    depositAxis.y * along +
+                    perpendicular.y * side +
+                    secondary.y * depth,
+
+                0.5 +
+                    depositAxis.z * along +
+                    perpendicular.z * side +
+                    secondary.z * depth
+            ]
+        });
+    }
+
+
+    // --------------------------------------
+    // 依玉料 ID 決定聚集區
+    // 不使用陣列 index 決定排列位置
+    // --------------------------------------
+
+    const clusterIndex =
+        hashString(`${mass.id ?? index}|cluster`) %
+        clusterCount;
+
+    const cluster = clusters[clusterIndex];
+
+    const alongJitter = randomBetween(
+        random,
+        -0.085,
+        0.085
+    );
+
+    const sideJitter = randomBetween(
+        random,
+        -0.075,
+        0.075
+    );
+
+    const depthJitter = randomBetween(
+        random,
+        -0.065,
+        0.065
+    );
+
+    const normalizedPosition = [
+        cluster.position[0] +
+            depositAxis.x * alongJitter +
+            perpendicular.x * sideJitter +
+            secondary.x * depthJitter,
+
+        cluster.position[1] +
+            depositAxis.y * alongJitter +
+            perpendicular.y * sideJitter +
+            secondary.y * depthJitter,
+
+        cluster.position[2] +
+            depositAxis.z * alongJitter +
+            perpendicular.z * sideJitter +
+            secondary.z * depthJitter
+    ].map(value =>
+        clamp(value, 0.22, 0.78)
+    );
+
+
+    // --------------------------------------
+    // 將玉料從偏圓形修整成不規則透鏡
     // --------------------------------------
 
     const vertices = mass.geometry.vertices;
@@ -1082,13 +1277,30 @@ function createNaturalJadePlacement(
 
         const irregularity =
             1 +
-            Math.sin(x * 3.4 + y * 2.1) * 0.035 +
-            Math.cos(z * 4.1 - y * 2.8) * 0.025;
+            Math.sin(x * 3.1 + y * 2.3 + z * 1.7) * 0.065 +
+            Math.cos(z * 4.2 - y * 2.6 + x * 1.3) * 0.045;
+
+        const edgeVariation =
+            1 +
+            Math.sin(
+                Math.atan2(z, y) * 3 +
+                x * 2.1
+            ) * 0.045;
 
         return [
-            x * VISUAL_CONFIG.jadeLengthScale * irregularity,
-            y * VISUAL_CONFIG.jadeWidthScale * irregularity,
-            z * VISUAL_CONFIG.jadeDepthScale * irregularity
+            x *
+                VISUAL_CONFIG.jadeLengthScale *
+                irregularity,
+
+            y *
+                VISUAL_CONFIG.jadeWidthScale *
+                irregularity *
+                edgeVariation,
+
+            z *
+                VISUAL_CONFIG.jadeDepthScale *
+                irregularity *
+                edgeVariation
         ];
     });
 
@@ -1102,49 +1314,7 @@ function createNaturalJadePlacement(
 
 
     // --------------------------------------
-    // 沿著共同的玉脈方向安排位置
-    // --------------------------------------
-
-    const progress = count <= 1
-        ? 0
-        : index / (count - 1) - 0.5;
-
-    const along = progress * 0.42;
-
-    const sideJitter = randomBetween(
-        random,
-        -0.075,
-        0.075
-    );
-
-    const depthJitter = randomBetween(
-        random,
-        -0.055,
-        0.055
-    );
-
-    const normalizedPosition = [
-        0.5 +
-            depositAxis.x * along +
-            perpendicular.x * sideJitter +
-            secondary.x * depthJitter,
-
-        0.5 +
-            depositAxis.y * along +
-            perpendicular.y * sideJitter +
-            secondary.y * depthJitter,
-
-        0.5 +
-            depositAxis.z * along +
-            perpendicular.z * sideJitter +
-            secondary.z * depthJitter
-    ].map(value =>
-        clamp(value, 0.30, 0.70)
-    );
-
-
-    // --------------------------------------
-    // 依玉料體積控制尺寸
+    // 依玉肉體積控制大小
     // --------------------------------------
 
     const volume = Math.max(
@@ -1154,25 +1324,26 @@ function createNaturalJadePlacement(
 
     const countScale = clamp(
         Math.sqrt(5 / count),
-        0.62,
+        0.58,
         1
     );
 
     const fitRatio = clamp(
-        0.16 + Math.sqrt(volume / 100) * 0.25,
-        0.17,
+        0.15 + Math.sqrt(volume / 100) * 0.25,
+        0.16,
         0.34
     ) * countScale;
 
 
     // --------------------------------------
-    // 方向略有變化，但保持玉脈整體方向
+    // 每塊玉肉有自己的角度偏移
+    // 但整體仍保留玉脈方向
     // --------------------------------------
 
     const rotation = {
-        x: baseRotation.x + randomBetween(random, -0.16, 0.16),
-        y: baseRotation.y + randomBetween(random, -0.20, 0.20),
-        z: baseRotation.z + randomBetween(random, -0.16, 0.16)
+        x: baseRotation.x + randomBetween(random, -0.24, 0.24),
+        y: baseRotation.y + randomBetween(random, -0.28, 0.28),
+        z: baseRotation.z + randomBetween(random, -0.22, 0.22)
     };
 
     const placed = meshPlacementUtils.createPlacement(
@@ -1180,11 +1351,8 @@ function createNaturalJadePlacement(
         hostBounds,
         {
             rotation,
-
             fitRatio,
-
             padding: 0.035,
-
             normalizedPosition
         }
     );
@@ -1207,8 +1375,8 @@ function createNaturalJadePlacement(
             ...(placed.placement ?? {}),
 
             naturalDeposit: true,
-
-            depositSeed: sourceSeed
+            depositSeed: sourceSeed,
+            depositCluster: clusterIndex
         }
     };
 }
@@ -1280,7 +1448,6 @@ function createFacingGroup(
 function addStoneCutSurface(
     group,
     triangles,
-    plane,
     outwardNormal,
     basis,
     bounds,
@@ -1289,7 +1456,6 @@ function addStoneCutSurface(
 ) {
     const surface = createTexturedSurface(
         triangles,
-        plane,
         outwardNormal,
         basis,
         bounds,
@@ -1356,18 +1522,17 @@ function addJadeCutSurfaces(
 
         const surface = createTexturedSurface(
             triangles,
-            plane,
             outwardNormal,
             basis,
             bounds,
             material,
             VISUAL_CONFIG.jadeSurfaceOffset,
-            `${mass.name ?? "玉料"}天然色帶切面`
+            `${mass.name ?? "玉料"}天然玉肉剖面`
         );
 
         if (!surface) {
-            material.dispose();
             material.map?.dispose();
+            material.dispose();
             continue;
         }
 
@@ -1499,7 +1664,7 @@ cuttingUI.displayResults = function (
         .normalize();
 
 
-    // 原石外殼保持不透明。
+    // 外殼維持完全不透明。
 
     enforceOpaqueMaterial(this.materials.positive);
     enforceOpaqueMaterial(this.materials.negative);
@@ -1531,6 +1696,7 @@ cuttingUI.displayResults = function (
 
 
     // 兩側共用同一組 UV 範圍。
+    // 讓切開的兩面紋理位置互相對應。
 
     const bounds = calculateProjectedBounds(
         [
@@ -1541,7 +1707,7 @@ cuttingUI.displayResults = function (
     );
 
 
-    // 以切割資料產生固定紋理種子。
+    // 依切割資料產生固定紋理種子。
 
     const textureSeed = hashString(
         [
@@ -1572,7 +1738,7 @@ cuttingUI.displayResults = function (
 
 
     // --------------------------------------
-    // 正側原石
+    // 正側原石外殼
     // --------------------------------------
 
     const positiveStone = this.createStoneMesh(
@@ -1586,7 +1752,7 @@ cuttingUI.displayResults = function (
 
 
     // --------------------------------------
-    // 負側原石
+    // 負側原石外殼
     // --------------------------------------
 
     const negativeStone = this.createStoneMesh(
@@ -1606,7 +1772,6 @@ cuttingUI.displayResults = function (
     const positiveStoneSurface = addStoneCutSurface(
         positiveGroup,
         positiveStoneTriangles,
-        planes.positive,
         planes.positiveOutward,
         basis,
         bounds,
@@ -1622,13 +1787,14 @@ cuttingUI.displayResults = function (
     const negativeStoneMaterial =
         stoneCutMaterial.clone();
 
+    // 兩側共用同一張紋理，確保切面對應。
+
     negativeStoneMaterial.map =
         stoneCutMaterial.map;
 
     const negativeStoneSurface = addStoneCutSurface(
         negativeGroup,
         negativeStoneTriangles,
-        planes.negative,
         planes.negativeOutward,
         basis,
         bounds,
@@ -1695,7 +1861,7 @@ cuttingUI.displayResults = function (
     this.currentView = "results";
 
 
-    // 更新體積。
+    // 更新體積資訊。
 
     updateVolumeDisplay(
         this,
@@ -1805,5 +1971,5 @@ cuttingUI.showResults = function () {
 // ==========================================
 
 console.log(
-    "[切割視覺] 自然石質剖面、玉肉色帶與不透明外殼系統已載入。"
+    "[切割視覺] 天然石質剖面、玉肉聚集分布與不透明外殼系統已載入。"
 );
