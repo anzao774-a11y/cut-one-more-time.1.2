@@ -420,6 +420,173 @@
             </section>
         </section>
 
+<!-- 玉石圖鑑 -->
+<section id="page-dex" class="page-section" hidden>
+    <div class="page-title">
+        <span class="section-label">JADE ENCYCLOPEDIA</span>
+        <h2>玉石圖鑑</h2>
+        <p>每一次發現，都值得留下紀錄。</p>
+    </div>
+
+    <div class="workshop-stat-panel">
+        <span>已發現品種</span>
+        <strong id="workshop-dex-count">0 種已發現</strong>
+    </div>
+
+    <div id="workshop-dex-list" class="workshop-card-list"></div>
+</section>
+
+<!-- 交易市場 -->
+<section id="page-market" class="page-section" hidden>
+    <div class="page-title">
+        <span class="section-label">JADE MARKET</span>
+        <h2>玉石交易市場</h2>
+        <p>行情每天變化，挑選適合的時機出售。</p>
+    </div>
+
+    <div class="workshop-market-event">
+        <span>今日市場情報</span>
+        <h3 id="workshop-market-event">平穩交易日</h3>
+        <p id="workshop-market-description">
+            今日市場沒有特殊變化。
+        </p>
+    </div>
+
+    <div class="workshop-section-heading">
+        <h3>目前可出售物品</h3>
+    </div>
+
+    <div id="workshop-market-list" class="workshop-card-list"></div>
+</section>
+
+<!-- 玉石加工 -->
+<section id="page-processing" class="page-section" hidden>
+    <div class="page-title">
+        <span class="section-label">JADE WORKSHOP</span>
+        <h2>玉石加工工坊</h2>
+        <p>將發現的玉肉，製作成值得收藏的作品。</p>
+    </div>
+
+    <div class="workshop-info-note">
+        目前提供基礎成品製作與打磨功能。
+        真正的 3D 雕刻設備將在後續版本加入。
+    </div>
+
+    <div id="workshop-processing-list" class="workshop-card-list"></div>
+</section>
+
+<!-- 博物館 -->
+<section id="page-museum" class="page-section" hidden>
+    <div class="page-title">
+        <span class="section-label">PRIVATE JADE MUSEUM</span>
+        <h2>私人玉石博物館</h2>
+        <p>留下最值得紀念的作品。</p>
+    </div>
+
+    <div class="workshop-stat-panel">
+        <span>目前展示</span>
+        <strong id="workshop-museum-count">0 件展品</strong>
+    </div>
+
+    <div id="workshop-museum-list" class="workshop-card-list"></div>
+</section>
+
+<!-- 小黑貓 -->
+<section id="page-cat" class="page-section" hidden>
+    <div class="page-title">
+        <span class="section-label">LITTLE BLACK CAT</span>
+        <h2>小黑貓的角落</h2>
+        <p>忙碌的工坊裡，也要記得照顧小小的夥伴。</p>
+    </div>
+
+    <div class="workshop-cat-panel">
+        <div class="workshop-cat-art">
+            <div class="pixel-cat">
+                <span class="cat-ear left"></span>
+                <span class="cat-ear right"></span>
+                <span class="cat-eye left"></span>
+                <span class="cat-eye right"></span>
+                <span class="cat-nose"></span>
+            </div>
+        </div>
+
+        <h3>Pixel 小黑貓</h3>
+        <p>「喵……今天有罐罐嗎？」</p>
+
+        <div class="workshop-cat-stats">
+            <div>
+                <span>好感度</span>
+                <strong id="workshop-cat-affection">0</strong>
+            </div>
+            <div>
+                <span>普通罐頭</span>
+                <strong id="workshop-cat-normal-count">0</strong>
+            </div>
+            <div>
+                <span>珍貴禮物</span>
+                <strong id="workshop-cat-premium-count">0</strong>
+            </div>
+        </div>
+
+        <div class="workshop-cat-actions">
+            <button
+                id="workshop-cat-normal"
+                class="workshop-button"
+                data-workshop-action="feed-normal">
+                普通罐頭・100 G
+            </button>
+
+            <button
+                id="workshop-cat-premium"
+                class="workshop-button premium"
+                data-workshop-action="feed-premium">
+                超高級罐頭・2,000 G
+            </button>
+        </div>
+
+        <p class="workshop-cat-note">
+            普通罐頭是日常陪伴。
+            超高級罐頭則是特別送給她的珍貴禮物。
+        </p>
+    </div>
+</section>
+
+<!-- 成就與玩家等級 -->
+<section id="page-achievements" class="page-section" hidden>
+    <div class="page-title">
+        <span class="section-label">WORKSHOP RECORDS</span>
+        <h2>工坊成就</h2>
+        <p>從第一塊原石開始，記錄每一步成長。</p>
+    </div>
+
+    <div class="workshop-level-panel">
+        <div class="workshop-level-heading">
+            <span>工坊等級</span>
+            <strong id="workshop-player-level">Lv. 1</strong>
+        </div>
+
+        <div class="workshop-exp-track">
+            <div id="workshop-exp-bar" class="workshop-exp-fill"></div>
+        </div>
+
+        <div class="workshop-level-footer">
+            <span id="workshop-player-exp">0 / 100 EXP</span>
+            <span>累積經驗：<strong id="workshop-total-exp">0</strong></span>
+        </div>
+    </div>
+
+    <div class="workshop-section-heading">
+        <h3>成就紀錄</h3>
+    </div>
+
+    <div id="workshop-achievement-list" class="workshop-card-list"></div>
+</section>
+
+<div id="workshop-message"
+    class="workshop-message"
+    role="status"
+    hidden></div>
+
         <!-- 設定頁面 -->
         <section id="page-settings" class="page-section" hidden>
             <div class="page-title">
