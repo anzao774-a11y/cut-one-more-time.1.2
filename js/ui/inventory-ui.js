@@ -1,3 +1,4 @@
+
 import { inventorySystem } from "../systems/inventory.js";
 import { eventBus } from "../core/event-bus.js";
 import { inventory3DPreview } from "./inventory-3d-preview.js";
@@ -45,16 +46,67 @@ function formatDate(value) {
     });
 }
 
+
+// ==========================================
+// 幾何資料檢查
+// ==========================================
+
+function hasValidGeometry(geometry) {
+    if (
+        !geometry ||
+        !Array.isArray(geometry.vertices) ||
+        !Array.isArray(geometry.faces) ||
+        geometry.vertices.length < 4 ||
+        geometry.faces.length < 4
+    ) {
+        return false;
+    }
+
+    return geometry.vertices.every(vertex =>
+        Array.isArray(vertex) &&
+        vertex.length === 3 &&
+        vertex.every(Number.isFinite)
+    ) && geometry.faces.every(face =>
+        Array.isArray(face) &&
+        face.length === 3 &&
+        face.every(index =>
+            Number.isInteger(index) &&
+            index >= 0 &&
+            index < geometry.vertices.length
+        )
+    );
+}
+
+
+// ==========================================
+// 玉料資料檢查
+// ==========================================
+
+function hasValidJadeMasses(jadeData) {
+    if (!Array.isArray(jadeData?.masses)) {
+        return false;
+    }
+
+    return jadeData.masses.some(mass =>
+        hasValidGeometry(mass?.geometry)
+    );
+}
+
+
 class InventoryUI {
     constructor() {
         this.selectedStoneId = null;
         this.initialized = false;
 
-        // 記錄目前 3D 預覽所使用的資料。
         this.previewStoneId = null;
         this.previewGeometryRef = null;
         this.previewJadeDataRef = null;
     }
+
+
+    // ==========================================
+    // 初始化
+    // ==========================================
 
     init() {
         if (this.initialized) return;
@@ -79,7 +131,9 @@ class InventoryUI {
         getElement("inventory-list")?.addEventListener(
             "click",
             event => {
-                const card = event.target.closest("[data-stone-id]");
+                const card = event.target.closest(
+                    "[data-stone-id]"
+                );
 
                 if (card) {
                     this.showDetail(card.dataset.stoneId);
@@ -92,7 +146,10 @@ class InventoryUI {
             () => this.closeDetail()
         );
 
-        eventBus.on("inventory:changed", () => this.render());
+        eventBus.on(
+            "inventory:changed",
+            () => this.render()
+        );
 
         document.addEventListener(
             "inventory:page-opened",
@@ -102,11 +159,17 @@ class InventoryUI {
         this.render();
     }
 
+
+    // ==========================================
+    // 更新背包
+    // ==========================================
+
     render() {
         this.renderSummary();
         this.renderList();
         this.refreshSelectedStone();
     }
+
 
     renderSummary() {
         const summary = inventorySystem.getSummary();
@@ -131,13 +194,20 @@ class InventoryUI {
         }
     }
 
+
     getFilters() {
         return {
-            status: getElement("inventory-status")?.value ?? "all",
-            rarity: getElement("inventory-rarity")?.value ?? "all",
-            order: getElement("inventory-sort")?.value ?? "newest"
+            status:
+                getElement("inventory-status")?.value ?? "all",
+
+            rarity:
+                getElement("inventory-rarity")?.value ?? "all",
+
+            order:
+                getElement("inventory-sort")?.value ?? "newest"
         };
     }
+
 
     renderList() {
         const container = getElement("inventory-list");
@@ -148,7 +218,9 @@ class InventoryUI {
             this.getFilters()
         );
 
-        const count = getElement("inventory-result-count");
+        const count = getElement(
+            "inventory-result-count"
+        );
 
         if (count) {
             count.textContent = `${stones.length} 塊原石`;
@@ -172,6 +244,7 @@ class InventoryUI {
                 "目前收藏清單中沒有符合條件的項目。";
 
             empty.append(symbol, title, description);
+
             container.appendChild(empty);
 
             return;
@@ -183,6 +256,7 @@ class InventoryUI {
             );
         }
     }
+
 
     createStoneCard(stone) {
         const button = document.createElement("button");
@@ -203,18 +277,22 @@ class InventoryUI {
 
         const rarity = document.createElement("span");
         rarity.className = "inventory-card-rarity";
+
         rarity.textContent =
             RARITY_NAMES[stone.rarity] ?? "未知稀有度";
 
         const title = document.createElement("strong");
+
         title.textContent =
             `${RARITY_NAMES[stone.rarity] ?? "未知"}原石`;
 
         const status = document.createElement("small");
+
         status.textContent =
             STATUS_NAMES[stone.status] ?? "狀態未知";
 
         const date = document.createElement("small");
+
         date.textContent = formatDate(stone.obtainedAt);
 
         button.append(
@@ -229,6 +307,11 @@ class InventoryUI {
         return button;
     }
 
+
+    // ==========================================
+    // 開啟詳細資料
+    // ==========================================
+
     showDetail(stoneId) {
         const stone = inventorySystem.getById(stoneId);
 
@@ -237,10 +320,11 @@ class InventoryUI {
             return;
         }
 
-        // 舊版切割紀錄沒有保存玉料時，嘗試從來源原石補回。
+        // 修復舊切割紀錄的玉料資料。
         this.recoverCutJadeData(stone);
 
         inventory3DPreview.destroy();
+
         this.resetPreviewReferences();
 
         this.selectedStoneId = stoneId;
@@ -264,6 +348,7 @@ class InventoryUI {
             formatDate(stone.obtainedAt);
 
         this.renderJadeData(stone.jadeData);
+
         this.renderStonePreview(stone);
 
         panel.scrollIntoView({
@@ -272,13 +357,22 @@ class InventoryUI {
         });
     }
 
+
+    // ==========================================
+    // 修復舊切割紀錄的玉料資料
+    // ==========================================
+
     recoverCutJadeData(stone) {
         if (
             stone?.status !== "cut" ||
-            stone.jadeData ||
             !stone.sourceStoneId ||
             !stone.cutData?.cutPlane
         ) {
+            return false;
+        }
+
+        // 已經有有效玉石資料，不需要重新計算。
+        if (hasValidJadeMasses(stone.jadeData)) {
             return false;
         }
 
@@ -288,8 +382,13 @@ class InventoryUI {
 
         if (
             !sourceStone?.geometry ||
-            !sourceStone?.jadeData
+            !hasValidJadeMasses(sourceStone.jadeData)
         ) {
+            console.warn(
+                "無法補回玉料：來源原石沒有有效玉料資料。",
+                stone.id
+            );
+
             return false;
         }
 
@@ -298,33 +397,71 @@ class InventoryUI {
                 sourceStone,
                 {
                     cutPlane: stone.cutData.cutPlane,
+
                     bladeThickness:
-                        Number(stone.cutData.bladeThickness) || 0.025
+                        Number(stone.cutData.bladeThickness) ||
+                        0.025
                 }
             );
 
             const recovered = split[stone.cutSide];
 
-            if (!recovered) {
+            if (!hasValidJadeMasses(recovered)) {
+                console.warn(
+                    "補回完成，但此切割側沒有有效玉石。",
+                    stone.id,
+                    stone.cutSide
+                );
+
                 return false;
             }
 
             stone.jadeData = recovered;
-            saveManager.save();
+
+            const saved = saveManager.save();
+
+            if (!saved) {
+                console.warn(
+                    "玉料資料已補回記憶體，但存檔未成功。",
+                    stone.id
+                );
+
+                return false;
+            }
+
+            console.log(
+                "成功補回切割產物玉料：",
+                stone.id,
+                recovered.masses.length
+            );
 
             return true;
 
         } catch (error) {
-            console.warn("舊切割紀錄的玉料資料補回失敗：", error);
+            console.warn(
+                "舊切割紀錄的玉料資料補回失敗：",
+                error
+            );
+
             return false;
         }
     }
+
+
+    // ==========================================
+    // 預覽資料紀錄
+    // ==========================================
 
     resetPreviewReferences() {
         this.previewStoneId = null;
         this.previewGeometryRef = null;
         this.previewJadeDataRef = null;
     }
+
+
+    // ==========================================
+    // 3D 預覽
+    // ==========================================
 
     renderStonePreview(stone) {
         const panel = getElement("inventory-detail");
@@ -338,17 +475,26 @@ class InventoryUI {
         if (!section) {
             section = document.createElement("section");
 
-            section.id = "inventory-stone-preview-section";
+            section.id =
+                "inventory-stone-preview-section";
+
             section.className =
                 "inventory-stone-preview-section";
 
             const heading = document.createElement("div");
-            heading.className = "inventory-preview-heading";
+
+            heading.className =
+                "inventory-preview-heading";
 
             const title = document.createElement("h4");
-            title.textContent = "原石 3D 外觀";
+
+            title.textContent =
+                stone.status === "cut"
+                    ? "獨立玉石 3D 外觀"
+                    : "原石 3D 外觀";
 
             const hint = document.createElement("span");
+
             hint.textContent = "拖曳旋轉・滾輪縮放";
 
             heading.append(title, hint);
@@ -356,7 +502,9 @@ class InventoryUI {
             const container = document.createElement("div");
 
             container.id = "inventory-stone-preview";
-            container.className = "inventory-stone-preview";
+
+            container.className =
+                "inventory-stone-preview";
 
             section.append(heading, container);
 
@@ -369,6 +517,16 @@ class InventoryUI {
             } else {
                 panel.prepend(section);
             }
+
+        } else {
+            const title = section.querySelector("h4");
+
+            if (title) {
+                title.textContent =
+                    stone.status === "cut"
+                        ? "獨立玉石 3D 外觀"
+                        : "原石 3D 外觀";
+            }
         }
 
         const container = getElement(
@@ -377,17 +535,23 @@ class InventoryUI {
 
         if (!container) return;
 
-        const geometry = stone.geometry;
+        const isCutPiece = stone.status === "cut";
 
-        const validGeometry =
-            geometry &&
-            Array.isArray(geometry.vertices) &&
-            Array.isArray(geometry.faces) &&
-            geometry.vertices.length >= 4 &&
-            geometry.faces.length >= 4;
+        const validStoneGeometry =
+            hasValidGeometry(stone.geometry);
 
-        if (!validGeometry) {
+        const validJadeData =
+            hasValidJadeMasses(stone.jadeData);
+
+        // 原石需要原石幾何。
+        // 切割產物只需要有效的獨立玉石幾何。
+        const canPreview = isCutPiece
+            ? validJadeData
+            : validStoneGeometry;
+
+        if (!canPreview) {
             inventory3DPreview.destroy();
+
             this.resetPreviewReferences();
 
             container.replaceChildren();
@@ -397,8 +561,9 @@ class InventoryUI {
             message.className =
                 "inventory-preview-fallback";
 
-            message.textContent =
-                "這塊原石沒有有效的 3D 幾何資料，可能來自舊存檔。";
+            message.textContent = isCutPiece
+                ? "目前沒有可顯示的獨立玉石資料。"
+                : "這塊原石沒有有效的 3D 幾何資料，可能來自舊存檔。";
 
             container.appendChild(message);
 
@@ -412,8 +577,12 @@ class InventoryUI {
 
         if (success) {
             this.previewStoneId = stone.id;
+
             this.previewGeometryRef = stone.geometry;
-            this.previewJadeDataRef = stone.jadeData ?? null;
+
+            this.previewJadeDataRef =
+                stone.jadeData ?? null;
+
         } else {
             this.resetPreviewReferences();
         }
@@ -431,9 +600,19 @@ class InventoryUI {
         }
     }
 
+
+    // ==========================================
+    // 玉石資料清單
+    // ==========================================
+
     renderJadeData(jadeData) {
-        const container = getElement("inventory-jade-list");
-        const totalElement = getElement("detail-jade-volume");
+        const container = getElement(
+            "inventory-jade-list"
+        );
+
+        const totalElement = getElement(
+            "detail-jade-volume"
+        );
 
         if (!container) return;
 
@@ -446,7 +625,9 @@ class InventoryUI {
 
             const empty = document.createElement("div");
 
-            empty.className = "inventory-detail-empty";
+            empty.className =
+                "inventory-detail-empty";
+
             empty.textContent =
                 "這塊原石沒有內部玉石資料。";
 
@@ -464,10 +645,16 @@ class InventoryUI {
             ? jadeData.masses
             : [];
 
-        if (masses.length === 0) {
+        const validMasses = masses.filter(mass =>
+            hasValidGeometry(mass?.geometry)
+        );
+
+        if (validMasses.length === 0) {
             const empty = document.createElement("div");
 
-            empty.className = "inventory-detail-empty";
+            empty.className =
+                "inventory-detail-empty";
+
             empty.textContent =
                 "目前沒有符合保留條件的玉石質量。";
 
@@ -476,7 +663,7 @@ class InventoryUI {
             return;
         }
 
-        for (const mass of masses) {
+        for (const mass of validMasses) {
             container.appendChild(
                 this.createJadeItem(mass)
             );
@@ -488,7 +675,8 @@ class InventoryUI {
         ) {
             const note = document.createElement("div");
 
-            note.className = "inventory-detail-empty";
+            note.className =
+                "inventory-detail-empty";
 
             note.textContent =
                 `另有 ${jadeData.discardedMasses.length} 個低於 5% 的獨立質量未列入保留清單。`;
@@ -497,26 +685,37 @@ class InventoryUI {
         }
     }
 
+
+    // ==========================================
+    // 單筆玉石資料
+    // ==========================================
+
     createJadeItem(mass) {
         const item = document.createElement("div");
+
         item.className = "inventory-jade-item";
 
         const top = document.createElement("div");
+
         top.className = "inventory-jade-item-top";
 
         const name = document.createElement("strong");
+
         name.textContent = mass.name ?? "未知玉石";
 
         const volume = document.createElement("span");
+
         volume.textContent =
             `${formatNumber(mass.volumePercent)}%`;
 
         top.append(name, volume);
 
         const bar = document.createElement("div");
+
         bar.className = "inventory-jade-bar";
 
         const fill = document.createElement("div");
+
         fill.className = "inventory-jade-bar-fill";
 
         const width = Math.min(
@@ -532,6 +731,7 @@ class InventoryUI {
         bar.appendChild(fill);
 
         const note = document.createElement("div");
+
         note.className = "inventory-jade-note";
 
         const rarityName =
@@ -545,6 +745,11 @@ class InventoryUI {
 
         return item;
     }
+
+
+    // ==========================================
+    // 更新目前選取的石頭
+    // ==========================================
 
     refreshSelectedStone() {
         if (!this.selectedStoneId) return;
@@ -560,6 +765,7 @@ class InventoryUI {
 
         this.updateDetailWithoutScroll(stone);
     }
+
 
     updateDetailWithoutScroll(stone) {
         const panel = getElement("inventory-detail");
@@ -609,10 +815,16 @@ class InventoryUI {
         }
     }
 
+
+    // ==========================================
+    // 關閉詳細資料
+    // ==========================================
+
     closeDetail() {
         this.selectedStoneId = null;
 
         inventory3DPreview.destroy();
+
         this.resetPreviewReferences();
 
         const panel = getElement("inventory-detail");
@@ -622,5 +834,6 @@ class InventoryUI {
         }
     }
 }
+
 
 export const inventoryUI = new InventoryUI();
