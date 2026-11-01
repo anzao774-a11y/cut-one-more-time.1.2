@@ -1,3 +1,4 @@
+
 // js/ui/cutting-result-visuals.js
 
 import * as THREE from "three";
@@ -10,16 +11,9 @@ import { cuttingUI } from "./cutting-ui.js";
 // ==========================================
 
 const VISUAL_CONFIG = {
-    // 兩側原石的水平間距
     sideSpacing: 1.35,
-
-    // 玉料切面與原石封口面的微小間距
     surfaceOffset: 0.0008,
-
-    // 判定頂點是否位於切割平面的誤差
-    planeTolerance: 1e-7,
-
-    // 玉石切面材質
+    planeTolerance: 1e-6,
     jadeRoughness: 0.19,
     jadeMetalness: 0.025
 };
@@ -36,41 +30,25 @@ function normalizeVector(vector) {
         vector[2]
     );
 
-    if (
-        !Number.isFinite(length) ||
-        length <= 1e-10
-    ) {
+    if (!Number.isFinite(length) || length <= 1e-10) {
         throw new Error("切割平面法線無效。");
     }
 
-    return [
-        vector[0] / length,
-        vector[1] / length,
-        vector[2] / length
-    ];
+    return vector.map(value => value / length);
 }
 
 
-// ==========================================
-// 計算頂點到平面的有號距離
-// ==========================================
-
 function getPlaneDistance(vertex, plane) {
     return (
-        (vertex[0] - plane.point[0]) *
-            plane.normal[0] +
-
-        (vertex[1] - plane.point[1]) *
-            plane.normal[1] +
-
-        (vertex[2] - plane.point[2]) *
-            plane.normal[2]
+        (vertex[0] - plane.point[0]) * plane.normal[0] +
+        (vertex[1] - plane.point[1]) * plane.normal[1] +
+        (vertex[2] - plane.point[2]) * plane.normal[2]
     );
 }
 
 
 // ==========================================
-// 建立正負兩側的實際切割平面
+// 建立正負兩側切割平面
 // ==========================================
 
 function createCutPlanes(result) {
@@ -88,13 +66,9 @@ function createCutPlanes(result) {
         throw new Error("切割結果缺少有效的切割平面資料。");
     }
 
-    const normal = normalizeVector(
-        sourcePlane.normal
-    );
+    const normal = normalizeVector(sourcePlane.normal);
 
-    const bladeThickness = Number(
-        result.bladeThickness
-    );
+    const bladeThickness = Number(result.bladeThickness);
 
     if (
         !Number.isFinite(bladeThickness) ||
@@ -123,30 +97,21 @@ function createCutPlanes(result) {
 
         negative: {
             point: negativePoint,
-            normal: normal.map(
-                value => -value
-            )
+            normal: normal.map(value => -value)
         },
 
-        // 正側封口面的外側方向
-        positiveOutward: normal.map(
-            value => -value
-        ),
+        positiveOutward: normal.map(value => -value),
 
-        // 負側封口面的外側方向
         negativeOutward: [...normal]
     };
 }
 
 
 // ==========================================
-// 從切割後玉料擷取真正的封口三角面
+// 擷取玉料真正的切割封口三角面
 // ==========================================
 
-function extractJadeCutTriangles(
-    mass,
-    plane
-) {
+function extractJadeCutTriangles(mass, plane) {
     const geometry = mass?.geometry;
 
     if (
@@ -190,19 +155,15 @@ function extractJadeCutTriangles(
             vertex => getPlaneDistance(vertex, plane)
         );
 
-        // 必須三個頂點全部落在切割平面上。
-        // 一般外殼三角面不會通過此條件。
         const isCutFace = distances.every(
             distance =>
                 Math.abs(distance) <=
                 VISUAL_CONFIG.planeTolerance
         );
 
-        if (!isCutFace) {
-            continue;
+        if (isCutFace) {
+            triangles.push(vertices);
         }
-
-        triangles.push(vertices);
     }
 
     return triangles;
@@ -210,7 +171,7 @@ function extractJadeCutTriangles(
 
 
 // ==========================================
-// 建立玉石切割截面
+// 建立玉石切面
 // ==========================================
 
 function createJadeCutSurface(
@@ -229,7 +190,6 @@ function createJadeCutSurface(
     }
 
     const positions = [];
-
     const offset = VISUAL_CONFIG.surfaceOffset;
 
     for (const triangle of triangles) {
@@ -258,19 +218,11 @@ function createJadeCutSurface(
 
     const material = new THREE.MeshStandardMaterial({
         color,
-
-        roughness:
-            VISUAL_CONFIG.jadeRoughness,
-
-        metalness:
-            VISUAL_CONFIG.jadeMetalness,
-
+        roughness: VISUAL_CONFIG.jadeRoughness,
+        metalness: VISUAL_CONFIG.jadeMetalness,
         side: THREE.DoubleSide,
-
         transparent: false,
-
         opacity: 1,
-
         depthWrite: true
     });
 
@@ -279,13 +231,10 @@ function createJadeCutSurface(
         material
     );
 
-    surface.name =
-        `${mass.name ?? "玉料"}切割截面`;
+    surface.name = `${mass.name ?? "玉料"}切割截面`;
 
     surface.userData.ownsMaterial = true;
-
-    surface.userData.jadeType =
-        mass.jadeType ?? null;
+    surface.userData.jadeType = mass.jadeType ?? null;
 
     surface.castShadow = false;
     surface.receiveShadow = true;
@@ -295,7 +244,7 @@ function createJadeCutSurface(
 
 
 // ==========================================
-// 強制原石材質保持不透明
+// 強制原石材質不透明
 // ==========================================
 
 function enforceOpaqueMaterial(material) {
@@ -310,18 +259,15 @@ function enforceOpaqueMaterial(material) {
 
         item.transparent = false;
         item.opacity = 1;
-
         item.depthWrite = true;
-
         item.side = THREE.DoubleSide;
-
         item.needsUpdate = true;
     }
 }
 
 
 // ==========================================
-// 建立切面朝向玩家的群組
+// 建立切面朝向鏡頭的群組
 // ==========================================
 
 function createFacingGroup(
@@ -341,13 +287,11 @@ function createFacingGroup(
         .clone()
         .normalize();
 
-    // 將切面外側法線轉向玩家鏡頭。
     group.quaternion.setFromUnitVectors(
         sourceDirection,
         targetDirection
     );
 
-    // 使用世界座標水平分開兩側原石。
     group.position.set(
         horizontalOffset,
         0,
@@ -359,7 +303,7 @@ function createFacingGroup(
 
 
 // ==========================================
-// 建立玉料切面並加入群組
+// 加入玉料切面
 // ==========================================
 
 function addJadeCutSurfaces(
@@ -370,8 +314,10 @@ function addJadeCutSurfaces(
     outwardNormal
 ) {
     if (!Array.isArray(masses)) {
-        return;
+        return 0;
     }
+
+    let count = 0;
 
     for (const mass of masses) {
         if (!mass?.geometry) {
@@ -390,18 +336,18 @@ function addJadeCutSurfaces(
         }
 
         group.add(surface);
+        count++;
     }
+
+    return count;
 }
 
 
 // ==========================================
-// 更新切割結果體積資訊
+// 更新體積顯示
 // ==========================================
 
-function updateVolumeDisplay(
-    cuttingUI,
-    result
-) {
+function updateVolumeDisplay(cuttingUI, result) {
     const elements = cuttingUI.elements;
 
     if (elements.originalVolume) {
@@ -441,7 +387,7 @@ function updateVolumeDisplay(
 
 
 // ==========================================
-// 替換切割結果顯示流程
+// 建立切割結果畫面
 // ==========================================
 
 cuttingUI.displayResults = function (
@@ -471,9 +417,7 @@ cuttingUI.displayResults = function (
     }
 
 
-    // ======================================
-    // 1. 清除舊畫面
-    // ======================================
+    // 清除上一輪結果。
 
     this.clearGroup(this.originalGroup);
     this.clearGroup(this.resultGroup);
@@ -484,9 +428,7 @@ cuttingUI.displayResults = function (
     this.resultGroup = null;
 
 
-    // ======================================
-    // 2. 重設鏡頭
-    // ======================================
+    // 重設鏡頭。
 
     this.resetCamera();
 
@@ -498,33 +440,19 @@ cuttingUI.displayResults = function (
         .normalize();
 
 
-    // ======================================
-    // 3. 強制原石完全不透明
-    // ======================================
+    // 原石保持不透明。
 
-    enforceOpaqueMaterial(
-        this.materials.positive
-    );
-
-    enforceOpaqueMaterial(
-        this.materials.negative
-    );
-
-    enforceOpaqueMaterial(
-        this.materials.original
-    );
+    enforceOpaqueMaterial(this.materials.positive);
+    enforceOpaqueMaterial(this.materials.negative);
+    enforceOpaqueMaterial(this.materials.original);
 
 
-    // ======================================
-    // 4. 建立正負切割平面
-    // ======================================
+    // 建立切割平面。
 
     const planes = createCutPlanes(result);
 
 
-    // ======================================
-    // 5. 建立兩側原石群組
-    // ======================================
+    // 建立兩側群組。
 
     const positiveGroup = createFacingGroup(
         planes.positiveOutward,
@@ -539,9 +467,7 @@ cuttingUI.displayResults = function (
     );
 
 
-    // ======================================
-    // 6. 建立正側原石外殼
-    // ======================================
+    // 正側原石。
 
     const positiveStone = this.createStoneMesh(
         result.positivePiece,
@@ -553,9 +479,7 @@ cuttingUI.displayResults = function (
     positiveGroup.add(positiveStone);
 
 
-    // ======================================
-    // 7. 建立負側原石外殼
-    // ======================================
+    // 負側原石。
 
     const negativeStone = this.createStoneMesh(
         result.negativePiece,
@@ -567,14 +491,12 @@ cuttingUI.displayResults = function (
     negativeGroup.add(negativeStone);
 
 
-    // ======================================
-    // 8. 顯示正側真正的玉石切面
-    // ======================================
+    // 正側玉料切面。
 
     const positiveMasses =
         jadeSplit?.positive?.masses ?? [];
 
-    addJadeCutSurfaces(
+    const positiveSurfaceCount = addJadeCutSurfaces(
         this,
         positiveGroup,
         positiveMasses,
@@ -583,14 +505,12 @@ cuttingUI.displayResults = function (
     );
 
 
-    // ======================================
-    // 9. 顯示負側真正的玉石切面
-    // ======================================
+    // 負側玉料切面。
 
     const negativeMasses =
         jadeSplit?.negative?.masses ?? [];
 
-    addJadeCutSurfaces(
+    const negativeSurfaceCount = addJadeCutSurfaces(
         this,
         negativeGroup,
         negativeMasses,
@@ -599,9 +519,7 @@ cuttingUI.displayResults = function (
     );
 
 
-    // ======================================
-    // 10. 組合切割結果
-    // ======================================
+    // 組合結果。
 
     this.resultGroup = new THREE.Group();
 
@@ -615,55 +533,103 @@ cuttingUI.displayResults = function (
     this.scene.add(this.resultGroup);
 
 
-    // ======================================
-    // 11. 更新切割結果資料
-    // ======================================
+    // 更新狀態。
 
     this.currentResult = result;
-
     this.currentView = "results";
 
-
-    // ======================================
-    // 12. 更新體積資訊
-    // ======================================
-
-    updateVolumeDisplay(
-        this,
-        result
-    );
-
-
-    // ======================================
-    // 13. 更新檢視按鈕
-    // ======================================
+    updateVolumeDisplay(this, result);
 
     this.updateViewButtons();
 
-    // performCut() 會在 displayResults() 返回後
-    // 執行存檔，因此在同步流程結束後再更新一次按鈕。
-    Promise.resolve().then(() => {
-        if (this.currentView === "results") {
-            this.updateViewButtons();
-        }
-    });
-
-
-    // ======================================
-    // 14. 顯示診斷資訊
-    // ======================================
 
     console.log("[切割視覺] 結果展示完成。");
 
     console.log("[切割視覺] 玉料切面數量：", {
-        positive: positiveGroup.children.filter(
-            child => child.userData?.ownsMaterial
-        ).length,
-
-        negative: negativeGroup.children.filter(
-            child => child.userData?.ownsMaterial
-        ).length
+        positive: positiveSurfaceCount,
+        negative: negativeSurfaceCount
     });
+};
+
+
+// ==========================================
+// 修正原石檢視切換
+// 保留切割結果，不再提前銷毀
+// ==========================================
+
+cuttingUI.showOriginal = function () {
+    if (!this.currentMesh) {
+        return;
+    }
+
+    // 只清理原石展示群組。
+    // resultGroup 必須保留，不能在切換時銷毀。
+
+    this.clearGroup(this.originalGroup);
+
+    this.clearPreview();
+
+    this.originalGroup = null;
+
+    // 暫時從場景移除切割結果，但保留物件與幾何。
+
+    if (this.resultGroup) {
+        this.scene.remove(this.resultGroup);
+    }
+
+    this.originalGroup = new THREE.Group();
+
+    this.originalGroup.name = "原石檢視";
+
+    this.originalGroup.add(
+        this.createStoneMesh(
+            this.currentMesh,
+            this.materials.original
+        )
+    );
+
+    this.scene.add(this.originalGroup);
+
+    this.currentView = "original";
+
+    this.resetCamera();
+
+    this.updateCutPreview();
+
+    this.updateViewButtons();
+};
+
+
+// ==========================================
+// 修正切割結果檢視切換
+// 重新加入保留的結果群組
+// ==========================================
+
+cuttingUI.showResults = function () {
+    if (
+        !this.currentResult ||
+        !this.resultGroup
+    ) {
+        return;
+    }
+
+    // 清理原石展示，但不動切割結果。
+
+    this.clearGroup(this.originalGroup);
+
+    this.originalGroup = null;
+
+    this.clearPreview();
+
+    // 重新顯示先前保留的切割結果。
+
+    this.scene.add(this.resultGroup);
+
+    this.currentView = "results";
+
+    this.resetCamera();
+
+    this.updateViewButtons();
 };
 
 
@@ -672,5 +638,5 @@ cuttingUI.displayResults = function (
 // ==========================================
 
 console.log(
-    "[切割視覺] 不透明原石與真實玉料截面系統已載入。"
+    "[切割視覺] 不透明原石、玉料真實截面與檢視保留系統已載入。"
 );
