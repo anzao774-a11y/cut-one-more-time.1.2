@@ -1,0 +1,524 @@
+
+import { saveManager } from "../core/save-manager.js";
+import { eventBus } from "../core/event-bus.js";
+import { workshopProgression } from "../systems/workshop-progression.js";
+
+function getElement(id) {
+    return document.getElementById(id);
+}
+
+function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[char]);
+}
+
+function formatGold(value) {
+    return `${Math.max(0, Number(value) || 0).toLocaleString("en-US")} G`;
+}
+
+function rarityName(rarity) {
+    return ({
+        common: "常見",
+        uncommon: "普通",
+        rare: "稀有",
+        epic: "史詩",
+        legendary: "傳說",
+        mythic: "神話"
+    })[rarity] ?? "未知";
+}
+
+class WorkshopUI {
+    constructor() {
+        this.initialized = false;
+    }
+
+    init() {
+        if (this.initialized) return;
+
+        this.initialized = true;
+
+        document.addEventListener("click", event => {
+            const button = event.target.closest("[data-workshop-action]");
+
+            if (!button) return;
+
+            this.handleAction(button);
+        });
+
+        eventBus.on("workshop:changed", () => this.renderAll());
+        eventBus.on("inventory:changed", () => this.renderAll());
+        eventBus.on("gold:changed", () => this.renderAll());
+        eventBus.on("achievement:unlocked", achievement => {
+            this.showMessage(
+                `達成成就：${achievement.name}，獲得 ${formatGold(achievement.reward)}！`
+            );
+        });
+
+        document.addEventListener("workshop:page-opened", () => {
+            this.renderAll();
+        });
+
+        this.renderAll();
+    }
+
+    renderAll() {
+        this.renderPlayer();
+        this.renderDex();
+        this.renderMarket();
+        this.renderProcessing();
+        this.renderMuseum();
+        this.renderCat();
+        this.renderAchievements();
+    }
+
+    // =====================================
+    // 通用提示
+    // =====================================
+
+    showMessage(message, type = "success") {
+        const element = getElement("workshop-message");
+
+        if (!element) {
+            console.log(message);
+            return;
+        }
+
+        element.textContent = message;
+        element.className = `workshop-message ${type}`;
+        element.hidden = false;
+    }
+
+    // =====================================
+    // 玩家等級
+    // =====================================
+
+    renderPlayer() {
+        const progress = workshopProgression.getLevelProgress();
+
+        const level = getElement("workshop-player-level");
+        const exp = getElement("workshop-player-exp");
+        const bar = getElement("workshop-exp-bar");
+        const total = getElement("workshop-total-exp");
+
+        if (level) {
+            level.textContent = `Lv. ${progress.level}`;
+        }
+
+        if (exp) {
+            exp.textContent =
+                `${progress.exp} / ${progress.required} EXP`;
+        }
+
+        if (bar) {
+            const percent = Math.min(
+                100,
+                progress.exp / progress.required * 100
+            );
+
+            bar.style.width = `${percent}%`;
+        }
+
+        if (total) {
+            total.textContent =
+                progress.totalExp.toLocaleString();
+        }
+    }
+
+    // =====================================
+    // 玉石圖鑑
+    // =====================================
+
+    renderDex() {
+        const container = getElement("workshop-dex-list");
+        const count = getElement("workshop-dex-count");
+
+        if (!container) return;
+
+        const entries = workshopProgression.getDex();
+
+        if (count) {
+            count.textContent = `${entries.length} 種已發現`;
+        }
+
+        if (entries.length === 0) {
+            container.innerHTML = `
+                <div class="workshop-empty">
+                    <span>◇</span>
+                    <strong>圖鑑尚無紀錄</strong>
+                    <p>切開原石，尋找你的第一種玉石。</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = entries.map(entry => `
+            <article class="workshop-item-card">
+                <div class="workshop-item-icon">◇</div>
+                <div class="workshop-item-info">
+                    <strong>${escapeHTML(entry.name)}</strong>
+                    <span>${escapeHTML(rarityName(entry.rarity))}</span>
+                    <small>發現時間：${new Date(entry.discoveredAt).toLocaleDateString("zh-TW")}</small>
+                </div>
+                <span class="workshop-discovered">已發現</span>
+            </article>
+        `).join("");
+    }
+
+    // =====================================
+    // 交易市場
+    // =====================================
+
+    renderMarket() {
+        const container = getElement("workshop-market-list");
+        const eventName = getElement("workshop-market-event");
+        const eventDescription = getElement("workshop-market-description");
+
+        if (!container) return;
+
+        const data = saveManager.getData();
+        const event = workshopProgression.getDailyEvent();
+
+        if (eventName) {
+            eventName.textContent = event.name;
+        }
+
+        if (eventDescription) {
+            eventDescription.textContent = event.description;
+        }
+
+        const jadeRows = [];
+
+        for (const stone of data.inventory) {
+            const masses = stone?.jadeData?.masses ?? [];
+
+            for (const mass of masses) {
+                jadeRows.push({
+                    stoneId: stone.id,
+                    mass,
+                    value: workshopProgression.getJadeValue(mass)
+                });
+            }
+        }
+
+        const productRows = data.products.map(product => ({
+            product,
+            value: product.value
+        }));
+
+        if (jadeRows.length === 0 && productRows.length === 0) {
+            container.innerHTML = `
+                <div class="workshop-empty">
+                    <span>⌂</span>
+                    <strong>目前沒有可出售的商品</strong>
+                    <p>先去切割原石，或製作玉石飾品吧。</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            ${jadeRows.map(row => `
+                <article class="workshop-item-card">
+                    <div class="workshop-item-icon">◇</div>
+                    <div class="workshop-item-info">
+                        <strong>${escapeHTML(row.mass.name)}</strong>
+                        <span>${escapeHTML(rarityName(row.mass.rarity))}</span>
+                        <small>估價：${formatGold(row.value)}</small>
+                    </div>
+                    <button
+                        class="workshop-button"
+                        data-workshop-action="sell-jade"
+                        data-stone-id="${escapeHTML(row.stoneId)}"
+                        data-mass-id="${escapeHTML(row.mass.id)}">
+                        出售
+                    </button>
+                </article>
+            `).join("")}
+
+            ${productRows.map(row => `
+                <article class="workshop-item-card">
+                    <div class="workshop-item-icon">✧</div>
+                    <div class="workshop-item-info">
+                        <strong>${escapeHTML(row.product.name)}</strong>
+                        <span>加工成品・品質 ${row.product.quality}</span>
+                        <small>估價：${formatGold(row.value)}</small>
+                    </div>
+                    <button
+                        class="workshop-button"
+                        data-workshop-action="sell-product"
+                        data-product-id="${escapeHTML(row.product.id)}">
+                        出售
+                    </button>
+                </article>
+            `).join("")}
+        `;
+    }
+
+    // =====================================
+    // 玉石加工
+    // =====================================
+
+    renderProcessing() {
+        const container = getElement("workshop-processing-list");
+
+        if (!container) return;
+
+        const inventory = saveManager.getData().inventory;
+        const rows = [];
+
+        for (const stone of inventory) {
+            for (const mass of stone?.jadeData?.masses ?? []) {
+                rows.push({ stone, mass });
+            }
+        }
+
+        if (rows.length === 0) {
+            container.innerHTML = `
+                <div class="workshop-empty">
+                    <span>⚒</span>
+                    <strong>目前沒有可加工的玉石</strong>
+                    <p>切開原石後，找到玉肉便能開始加工。</p>
+                </div>
+            `;
+            return;
+        }
+
+        const recipes = [
+            ["pendant", "玉石吊墜", 300],
+            ["ring", "玉石戒指", 450],
+            ["earrings", "玉石耳環", 500],
+            ["bracelet", "玉石手鐲", 1000]
+        ];
+
+        container.innerHTML = rows.map(({ stone, mass }) => `
+            <article class="workshop-processing-card">
+                <div class="workshop-processing-heading">
+                    <div>
+                        <strong>${escapeHTML(mass.name)}</strong>
+                        <span>${escapeHTML(rarityName(mass.rarity))}</span>
+                    </div>
+                    <strong>${formatGold(workshopProgression.getJadeValue(mass))}</strong>
+                </div>
+
+                <p>選擇想製作的成品：</p>
+
+                <div class="workshop-recipe-list">
+                    ${recipes.map(([type, name, cost]) => `
+                        <button
+                            class="workshop-recipe-button"
+                            data-workshop-action="craft"
+                            data-stone-id="${escapeHTML(stone.id)}"
+                            data-mass-id="${escapeHTML(mass.id)}"
+                            data-product-type="${type}">
+                            ${name}
+                            <small>${formatGold(cost)}</small>
+                        </button>
+                    `).join("")}
+                </div>
+            </article>
+        `).join("");
+    }
+
+    // =====================================
+    // 博物館
+    // =====================================
+
+    renderMuseum() {
+        const container = getElement("workshop-museum-list");
+        const count = getElement("workshop-museum-count");
+
+        if (!container) return;
+
+        const data = saveManager.getData();
+
+        const exhibits = data.products.filter(
+            product => product.museum
+        );
+
+        if (count) {
+            count.textContent = `${exhibits.length} 件展品`;
+        }
+
+        if (exhibits.length === 0) {
+            container.innerHTML = `
+                <div class="workshop-empty">
+                    <span>▤</span>
+                    <strong>博物館目前尚未開放展覽</strong>
+                    <p>製作第一件玉石飾品，將它放進你的私人收藏館。</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = exhibits.map(product => `
+            <article class="workshop-item-card">
+                <div class="workshop-item-icon">✧</div>
+                <div class="workshop-item-info">
+                    <strong>${escapeHTML(product.name)}</strong>
+                    <span>${escapeHTML(rarityName(product.rarity))}</span>
+                    <small>收藏價值：${formatGold(product.value)}</small>
+                </div>
+                <button
+                    class="workshop-button secondary"
+                    data-workshop-action="remove-exhibit"
+                    data-product-id="${escapeHTML(product.id)}">
+                    收回
+                </button>
+            </article>
+        `).join("");
+    }
+
+    // =====================================
+    // 小黑貓
+    // =====================================
+
+    renderCat() {
+        const data = saveManager.getData();
+        const cat = data.cat;
+
+        const affection = getElement("workshop-cat-affection");
+        const normalCount = getElement("workshop-cat-normal-count");
+        const premiumCount = getElement("workshop-cat-premium-count");
+
+        if (affection) {
+            affection.textContent = cat.affection;
+        }
+
+        if (normalCount) {
+            normalCount.textContent = cat.normalFeedCount;
+        }
+
+        if (premiumCount) {
+            premiumCount.textContent = cat.premiumGiftCount;
+        }
+
+        const normalButton = getElement("workshop-cat-normal");
+        const premiumButton = getElement("workshop-cat-premium");
+
+        if (normalButton) {
+            normalButton.disabled =
+                cat.lastNormalFeed === new Date().toLocaleDateString("en-CA");
+        }
+
+        if (premiumButton) {
+            premiumButton.disabled =
+                cat.lastPremiumGift === new Date().toLocaleDateString("en-CA");
+        }
+    }
+
+    // =====================================
+    // 成就
+    // =====================================
+
+    renderAchievements() {
+        const container = getElement("workshop-achievement-list");
+
+        if (!container) return;
+
+        const achievements =
+            workshopProgression.getAchievements();
+
+        container.innerHTML = achievements.map(item => `
+            <article class="workshop-achievement-card ${item.unlocked ? "unlocked" : ""}">
+                <div class="workshop-achievement-icon">
+                    ${item.unlocked ? "✦" : "◇"}
+                </div>
+                <div class="workshop-item-info">
+                    <strong>${escapeHTML(item.name)}</strong>
+                    <span>${escapeHTML(item.description)}</span>
+                    <small>獎勵：${formatGold(item.reward)}</small>
+                </div>
+                <span class="workshop-achievement-status">
+                    ${item.unlocked ? "已完成" : "未完成"}
+                </span>
+            </article>
+        `).join("");
+    }
+
+    // =====================================
+    // 按鈕事件
+    // =====================================
+
+    handleAction(button) {
+        const action = button.dataset.workshopAction;
+
+        let result;
+
+        if (action === "sell-jade") {
+            result = workshopProgression.sellJade(
+                button.dataset.stoneId,
+                button.dataset.massId
+            );
+        }
+
+        if (action === "sell-product") {
+            result = workshopProgression.sellProduct(
+                button.dataset.productId
+            );
+        }
+
+        if (action === "craft") {
+            result = workshopProgression.craftJade(
+                button.dataset.stoneId,
+                button.dataset.massId,
+                button.dataset.productType
+            );
+        }
+
+        if (action === "polish") {
+            result = workshopProgression.polishProduct(
+                button.dataset.productId
+            );
+        }
+
+        if (action === "exhibit") {
+            result = workshopProgression.exhibitProduct(
+                button.dataset.productId
+            );
+        }
+
+        if (action === "remove-exhibit") {
+            const success = workshopProgression.removeExhibit(
+                button.dataset.productId
+            );
+
+            result = {
+                success,
+                message: success
+                    ? "已將展品收回。"
+                    : "無法收回展品。"
+            };
+        }
+
+        if (action === "feed-normal") {
+            result = workshopProgression.feedCat("normal");
+        }
+
+        if (action === "feed-premium") {
+            result = workshopProgression.feedCat("premium");
+        }
+
+        if (!result) return;
+
+        this.showMessage(
+            result.message,
+            result.success ? "success" : "error"
+        );
+
+        if (result.wish) {
+            this.showMessage(
+                `${result.message} 願望：${result.wish.name}`,
+                "success"
+            );
+        }
+
+        this.renderAll();
+    }
+}
+
+export const workshopUI = new WorkshopUI();
