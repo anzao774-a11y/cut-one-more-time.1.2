@@ -6,16 +6,14 @@ const PAGE_NAMES = {
     inventory: "原石背包",
     dex: "玉石圖鑑",
     market: "交易市場",
+    processing: "玉石加工",
+    museum: "博物館",
+    cat: "小黑貓",
+    achievements: "成就紀錄",
     settings: "工坊設定"
 };
 
-const AVAILABLE_PAGES = [
-    "home",
-    "gacha",
-    "cutting",
-    "inventory",
-    "settings"
-];
+const AVAILABLE_PAGES = Object.keys(PAGE_NAMES);
 
 class Navigation {
     constructor() {
@@ -41,22 +39,10 @@ class Navigation {
             section.hidden = true;
         });
 
-        const targetPage = AVAILABLE_PAGES.includes(page)
-            ? page
-            : "placeholder";
+        const target = document.getElementById(`page-${page}`);
 
-        const target = document.getElementById(`page-${targetPage}`);
-
-        if (target) {
+        if (target && AVAILABLE_PAGES.includes(page)) {
             target.hidden = false;
-        }
-
-        const placeholderTitle =
-            document.getElementById("placeholder-title");
-
-        if (targetPage === "placeholder" && placeholderTitle) {
-            placeholderTitle.textContent =
-                `${PAGE_NAMES[page]}：開發中`;
         }
 
         document.querySelectorAll(".nav-item").forEach(button => {
@@ -78,6 +64,21 @@ class Navigation {
                     new CustomEvent("cutting:page-opened")
                 );
             });
+        }
+
+        if (
+            [
+                "dex",
+                "market",
+                "processing",
+                "museum",
+                "cat",
+                "achievements"
+            ].includes(page)
+        ) {
+            document.dispatchEvent(
+                new CustomEvent("workshop:page-opened")
+            );
         }
 
         window.scrollTo({
