@@ -1,3 +1,4 @@
+
 import * as THREE from "three";
 import { OrbitControls } from
     "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
@@ -15,10 +16,12 @@ class Inventory3DPreview {
         this.renderer = null;
         this.controls = null;
 
+        this.grid = null;
         this.resizeObserver = null;
         this.animationFrame = null;
 
         this.initialized = false;
+        this.destroying = false;
     }
 
     /**
@@ -28,7 +31,7 @@ class Inventory3DPreview {
      * stone.jadeData.masses：內部模型資料
      */
     mount(container, stone) {
-        if (!container || !stone?.geometry) {
+        if (!container || !stone?.geometry || !stone?.id) {
             return false;
         }
 
@@ -38,6 +41,8 @@ class Inventory3DPreview {
         this.previewId = `inventory-${stone.id}`;
 
         try {
+            this.validateGeometry(stone.geometry);
+
             this.scene = new THREE.Scene();
             this.scene.background = new THREE.Color("#20231e");
 
@@ -100,15 +105,61 @@ class Inventory3DPreview {
 
             this.destroy();
 
-            const message = document.createElement("div");
-            message.className = "inventory-preview-fallback";
-            message.textContent =
-                "目前無法顯示 3D 模型，請稍後再試。";
+            if (container.isConnected) {
+                const message = document.createElement("div");
 
-            container.replaceChildren(message);
+                message.className =
+                    "inventory-preview-fallback";
+
+                message.textContent =
+                    "目前無法顯示 3D 模型，請稍後再試。";
+
+                container.replaceChildren(message);
+            }
 
             return false;
         }
+    }
+
+    /**
+     * 驗證幾何資料
+     */
+    validateGeometry(meshData) {
+        if (
+            !meshData ||
+            !Array.isArray(meshData.vertices) ||
+            !Array.isArray(meshData.faces) ||
+            meshData.vertices.length < 4 ||
+            meshData.faces.length < 4
+        ) {
+            throw new Error("原石幾何資料不完整");
+        }
+
+        for (const vertex of meshData.vertices) {
+            if (
+                !Array.isArray(vertex) ||
+                vertex.length < 3 ||
+                !vertex.slice(0, 3).every(Number.isFinite)
+            ) {
+                throw new Error("原石頂點資料格式錯誤");
+            }
+        }
+
+        for (const face of meshData.faces) {
+            if (
+                !Array.isArray(face) ||
+                face.length !== 3 ||
+                !face.every(index =>
+                    Number.isInteger(index) &&
+                    index >= 0 &&
+                    index < meshData.vertices.length
+                )
+            ) {
+                throw new Error("原石面資料格式錯誤");
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -174,6 +225,7 @@ class Inventory3DPreview {
                     flatShading: true,
                     color: 0x9a927d
                 },
+
                 jadeOptions: {
                     roughness: 0.22,
                     metalness: 0.02,
@@ -186,7 +238,6 @@ class Inventory3DPreview {
 
         this.fitCamera(stone.geometry);
 
-        // 預設保留原石外觀及內部模型。
         meshPreviewManager.setStoneVisible(
             this.previewId,
             true
@@ -204,32 +255,42 @@ class Inventory3DPreview {
     fitCamera(meshData) {
         const positions = meshData.vertices;
 
-        let minX = Infinity;
-        let minY = Infinity;
-        let minZ = Infinity;
+        const min = new THREE.Vector3(
+            Infinity,
+            Infinity,
+            Infinity
+        );
 
-        let maxX = -Infinity;
-        let maxY = -Infinity;
-        let maxZ = -Infinity;
+        const max = new THREE.Vector3(
+            -Infinity,
+            -Infinity,
+            -Infinity
+        );
 
         for (const vertex of positions) {
-            minX = Math.min(minX, vertex[0]);
-            minY = Math.min(minY, vertex[1]);
-            minZ = Math.min(minZ, vertex[2]);
+            min.min(
+                new THREE.Vector3(
+                    vertex[0],
+                    vertex[1],
+                    vertex[2]
+                )
+            );
 
-            maxX = Math.max(maxX, vertex[0]);
-            maxY = Math.max(maxY, vertex[1]);
-            maxZ = Math.max(maxZ, vertex[2]);
+            max.max(
+                new THREE.Vector3(
+                    vertex[0],
+                    vertex[1],
+                    vertex[2]
+                )
+            );
         }
 
-        const sizeX = maxX - minX;
-        const sizeY = maxY - minY;
-        const sizeZ = maxZ - minZ;
+        const size = max.clone().sub(min);
 
         const maxDimension = Math.max(
-            sizeX,
-            sizeY,
-            sizeZ,
+            size.x,
+            size.y,
+            size.z,
             0.1
         );
 
@@ -241,14 +302,22 @@ class Inventory3DPreview {
             distance
         );
 
-        this.camera.near = maxDimension * 0.001;
+        this.camera.near = Math.max(
+            maxDimension * 0.001,
+            0.001
+        );
+
         this.camera.far = maxDimension * 100;
 
         this.camera.updateProjectionMatrix();
 
         this.controls.target.set(0, 0, 0);
-        this.controls.minDistance = maxDimension * 0.8;
-        this.controls.maxDistance = maxDimension * 8;
+
+        this.controls.minDistance =
+            maxDimension * 0.8;
+
+        this.controls.maxDistance =
+            maxDimension * 8;
 
         this.controls.update();
     }
@@ -265,13 +334,13 @@ class Inventory3DPreview {
         );
 
         grid.position.y = -1.5;
-        this.scene.add(grid);
 
+        this.scene.add(grid);
         this.grid = grid;
     }
 
     /**
-     * 監聽預覽容器尺寸
+     * 監聽容器尺寸
      */
     setupResizeObserver() {
         if (typeof ResizeObserver === "undefined") {
@@ -286,10 +355,14 @@ class Inventory3DPreview {
     }
 
     /**
-     * 更新攝影機與渲染器尺寸
+     * 更新渲染尺寸
      */
     resize() {
-        if (!this.renderer || !this.camera || !this.container) {
+        if (
+            !this.renderer ||
+            !this.camera ||
+            !this.container
+        ) {
             return;
         }
 
@@ -352,7 +425,12 @@ class Inventory3DPreview {
      * 開始動畫
      */
     animate() {
-        if (!this.renderer) {
+        if (
+            !this.renderer ||
+            !this.scene ||
+            !this.camera ||
+            this.destroying
+        ) {
             return;
         }
 
@@ -371,6 +449,8 @@ class Inventory3DPreview {
      * 清理預覽
      */
     destroy() {
+        this.destroying = true;
+
         if (this.animationFrame !== null) {
             cancelAnimationFrame(this.animationFrame);
             this.animationFrame = null;
@@ -388,26 +468,25 @@ class Inventory3DPreview {
             );
         }
 
-        if (this.grid?.geometry) {
-            this.grid.geometry.dispose();
-        }
+        if (this.grid) {
+            this.grid.geometry?.dispose();
 
-        if (this.grid?.material) {
             const materials = Array.isArray(this.grid.material)
                 ? this.grid.material
                 : [this.grid.material];
 
             for (const material of materials) {
-                material.dispose();
+                material?.dispose();
             }
+
+            this.grid.removeFromParent();
+            this.grid = null;
         }
 
-        this.grid = null;
-
         if (this.renderer) {
-            this.renderer.dispose();
-
             const canvas = this.renderer.domElement;
+
+            this.renderer.dispose();
 
             if (canvas?.parentNode) {
                 canvas.parentNode.removeChild(canvas);
@@ -420,7 +499,10 @@ class Inventory3DPreview {
         this.container = null;
         this.previewId = null;
         this.initialized = false;
+
+        this.destroying = false;
     }
 }
 
-export const inventory3DPreview = new Inventory3DPreview();
+export const inventory3DPreview =
+    new Inventory3DPreview();
