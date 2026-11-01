@@ -1,143 +1,445 @@
 
+/**
+ * mesh-preview-manager.js
+ *
+ * 管理原石及內部模型的 Three.js 預覽。
+ *
+ * 使用的模型格式：
+ * {
+ *   vertices: [[x, y, z], ...],
+ *   faces: [[a, b, c], ...]
+ * }
+ *
+ * 內部模型格式：
+ * {
+ *   geometry: {
+ *     vertices: [...],
+ *     faces: [...]
+ *   },
+ *   placement: {
+ *     position: [x, y, z],
+ *     rotation: { x, y, z },
+ *     scale: number | [x, y, z]
+ *   }
+ * }
+ */
+
 import * as THREE from "three";
 import { meshGeometryUtils } from "./mesh-geometry-utils.js";
 import { meshThreeAdapter } from "./mesh-three-adapter.js";
 
 class MeshPreviewManager {
-    constructor() {
-        this.groups = new Map();
+    previews = new Map();
+
+    validateId(id) {
+        if (
+            typeof id !== "string" ||
+            id.trim().length === 0
+        ) {
+            throw new Error("預覽 ID 不可為空");
+        }
     }
 
-    createPreview(id, stoneMesh, includedMeshes = []) {
-        if (!id) {
-            throw new Error("預覽識別碼不可為空");
+    validateMesh(mesh, name = "模型") {
+        if (
+            !mesh ||
+            !Array.isArray(mesh.vertices) ||
+            !Array.isArray(mesh.faces) ||
+            mesh.vertices.length < 4 ||
+            mesh.faces.length < 4
+        ) {
+            throw new Error(`${name}資料不完整`);
         }
 
-        this.disposePreview(id);
+        for (const vertex of mesh.vertices) {
+            if (
+                !Array.isArray(vertex) ||
+                vertex.length !== 3 ||
+                !vertex.every(Number.isFinite)
+            ) {
+                throw new Error(`${name}包含無效頂點`);
+            }
+        }
 
-        const group = meshThreeAdapter.createGroup();
-        group.name = `preview-${id}`;
+        for (const face of mesh.faces) {
+            if (
+                !Array.isArray(face) ||
+                face.length !== 3 ||
+                !face.every(index =>
+                    Number.isInteger(index) &&
+                    index >= 0 &&
+                    index < mesh.vertices.length
+                )
+            ) {
+                throw new Error(`${name}包含無效三角面`);
+            }
+        }
+    }
+
+    getCenter(mesh) {
+        const bounds = meshGeometryUtils.getBounds(mesh);
+
+        return bounds.center;
+    }
+
+    getScaleVector(scale) {
+        if (scale === undefined) {
+            return [1, 1, 1];
+        }
+
+        const result = typeof scale === "number"
+            ? [scale, scale, scale]
+            : scale;
+
+        if (
+            !Array.isArray(result) ||
+            result.length !== 3 ||
+            !result.every(value =>
+                Number.isFinite(value) && value > 0
+            )
+        ) {
+            throw new Error("內部模型縮放比例無效");
+        }
+
+        return result;
+    }
+
+    getPosition(placement) {
+        const position = placement?.position ?? [0, 0, 0];
+
+        if (
+            !Array.isArray(position) ||
+            position.length !== 3 ||
+            !position.every(Number.isFinite)
+        ) {
+            throw new Error("內部模型位置無效");
+        }
+
+        return position;
+    }
+
+    getRotation(placement) {
+        const rotation = placement?.rotation ?? {
+            x: 0,
+            y: 0,
+            z: 0
+        };
+
+        const result = {
+            x: rotation.x ?? 0,
+            y: rotation.y ?? 0,
+            z: rotation.z ?? 0
+        };
+
+        if (!Object.values(result).every(Number.isFinite)) {
+            throw new Error("內部模型旋轉角度無效");
+        }
+
+        return result;
+    }
+
+    applyPlacement(object, placement = {}) {
+        const position = this.getPosition(placement);
+        const rotation = this.getRotation(placement);
+        const scale = this.getScaleVector(placement.scale);
+
+        object.position.set(
+            position[0],
+            position[1],
+            position[2]
+        );
+
+        object.rotation.set(
+            rotation.x,
+            rotation.y,
+            rotation.z
+        );
+
+        object.scale.set(
+            scale[0],
+            scale[1],
+            scale[2]
+        );
+
+        object.updateMatrix();
+    }
+
+    createRootGroup() {
+        const group = new THREE.Group();
+
+        group.name = "MeshPreviewRoot";
+
+        return group;
+    }
+
+    createPreview(id, stoneMesh, includedMeshes = [], options = {}) {
+        this.validateId(id);
+        this.validateMesh(stoneMesh, "原石");
+
+        if (!Array.isArray(includedMeshes)) {
+            throw new Error("內部模型必須是陣列");
+        }
+
+        // 先建立新預覽，避免新模型建立失敗時舊預覽消失。
+        const center = this.getCenter(stoneMesh);
+        const root = this.createRootGroup();
+
+        const stoneGroup = new THREE.Group();
+        stoneGroup.name = "StoneGroup";
+
+        const includedGroup = new THREE.Group();
+        includedGroup.name = "IncludedMeshes";
+
+        root.add(stoneGroup);
+        root.add(includedGroup);
+
+        let stoneObject = null;
 
         try {
-            const centeredStone = meshGeometryUtils.center(stoneMesh);
-
-            const stoneObject = meshThreeAdapter.createStoneMesh(
-                centeredStone,
-                {
-                    color: 0xaaa18d,
-                    roughness: 0.55,
-                    metalness: 0.05,
-                    flatShading: true
-                }
+            stoneObject = meshThreeAdapter.createStoneMesh(
+                stoneMesh,
+                options.stoneOptions ?? {}
             );
 
-            stoneObject.name = "preview-stone";
-            group.add(stoneObject);
+            stoneGroup.add(stoneObject);
 
-            const includedGroup = new THREE.Group();
-            includedGroup.name = "preview-inclusions";
+            for (let index = 0; index < includedMeshes.length; index++) {
+                const mass = includedMeshes[index];
 
-            for (const item of includedMeshes) {
-                if (!item || !item.geometry) {
-                    throw new Error("內部模型缺少幾何資料");
-                }
+                const geometryData = mass.geometry ?? mass.mesh;
 
-                const object = meshThreeAdapter.createJadeMesh(item);
+                this.validateMesh(
+                    geometryData,
+                    `內部模型 ${index}`
+                );
 
-                const placement = item.placement ?? {};
+                const jadeObject = meshThreeAdapter.createJadeMesh(
+                    {
+                        ...mass,
+                        geometry: geometryData
+                    },
+                    options.jadeOptions ?? {}
+                );
 
-                if (Array.isArray(placement.position)) {
-                    object.position.set(
-                        placement.position[0] ?? 0,
-                        placement.position[1] ?? 0,
-                        placement.position[2] ?? 0
-                    );
-                }
+                this.applyPlacement(
+                    jadeObject,
+                    mass.placement ?? {}
+                );
 
-                if (placement.rotation) {
-                    object.rotation.set(
-                        placement.rotation.x ?? 0,
-                        placement.rotation.y ?? 0,
-                        placement.rotation.z ?? 0
-                    );
-                }
+                jadeObject.name =
+                    mass.id ?? `IncludedMesh_${index}`;
 
-                includedGroup.add(object);
+                includedGroup.add(jadeObject);
             }
 
-            group.add(includedGroup);
+            // 將位移放在共同根群組上。
+            // 原石與內部模型會一起移動，保持相同座標系統。
+            root.position.set(
+                -center[0],
+                -center[1],
+                -center[2]
+            );
 
-            this.groups.set(id, {
-                group,
+            root.updateMatrixWorld(true);
+
+            const previous = this.previews.get(id);
+
+            const preview = {
+                id,
+                root,
+                stoneGroup,
+                includedGroup,
                 stoneObject,
-                includedGroup
-            });
+                center: [...center],
+                includedCount: includedGroup.children.length,
+                createdAt: Date.now()
+            };
 
-            return group;
+            this.previews.set(id, preview);
 
+            // 新預覽成功建立後，才清除舊預覽。
+            if (previous) {
+                this.disposePreviewObject(previous);
+            }
+
+            return preview;
         } catch (error) {
-            meshThreeAdapter.disposeGroup(group);
+            this.disposeObjectResources(root);
             throw error;
         }
     }
 
     getPreview(id) {
-        return this.groups.get(id)?.group ?? null;
+        return this.previews.get(id) ?? null;
     }
 
     getStoneObject(id) {
-        return this.groups.get(id)?.stoneObject ?? null;
+        return this.getPreview(id)?.stoneObject ?? null;
     }
 
     getIncludedGroup(id) {
-        return this.groups.get(id)?.includedGroup ?? null;
+        return this.getPreview(id)?.includedGroup ?? null;
+    }
+
+    getRoot(id) {
+        return this.getPreview(id)?.root ?? null;
     }
 
     setInclusionsVisible(id, visible) {
-        const includedGroup = this.getIncludedGroup(id);
+        const preview = this.getPreview(id);
 
-        if (!includedGroup) {
+        if (!preview) {
             return false;
         }
 
-        includedGroup.visible = Boolean(visible);
+        preview.includedGroup.visible = Boolean(visible);
+
+        return true;
+    }
+
+    setStoneVisible(id, visible) {
+        const preview = this.getPreview(id);
+
+        if (!preview) {
+            return false;
+        }
+
+        preview.stoneGroup.visible = Boolean(visible);
+
         return true;
     }
 
     setStoneOpacity(id, opacity) {
-        const stone = this.getStoneObject(id);
+        const preview = this.getPreview(id);
 
-        if (!stone) {
+        if (!preview) {
             return false;
         }
 
-        const value = Math.max(0, Math.min(1, opacity));
+        if (
+            !Number.isFinite(opacity) ||
+            opacity < 0 ||
+            opacity > 1
+        ) {
+            throw new Error("透明度必須介於 0 至 1");
+        }
 
-        stone.material.transparent = value < 1;
-        stone.material.opacity = value;
-        stone.material.depthWrite = value >= 1;
+        preview.stoneObject.traverse(object => {
+            if (!object.isMesh || !object.material) {
+                return;
+            }
+
+            const materials = Array.isArray(object.material)
+                ? object.material
+                : [object.material];
+
+            for (const material of materials) {
+                material.transparent = opacity < 1;
+                material.opacity = opacity;
+                material.depthWrite = opacity >= 1;
+                material.needsUpdate = true;
+            }
+        });
 
         return true;
     }
 
-    disposePreview(id) {
-        const entry = this.groups.get(id);
+    disposeObjectResources(root) {
+        if (!root) {
+            return;
+        }
 
-        if (!entry) {
+        const geometries = new Set();
+        const materials = new Set();
+
+        root.traverse(object => {
+            if (object.geometry) {
+                geometries.add(object.geometry);
+            }
+
+            if (!object.material) {
+                return;
+            }
+
+            const list = Array.isArray(object.material)
+                ? object.material
+                : [object.material];
+
+            for (const material of list) {
+                if (material) {
+                    materials.add(material);
+                }
+            }
+        });
+
+        for (const geometry of geometries) {
+            geometry.dispose();
+        }
+
+        for (const material of materials) {
+            material.dispose();
+        }
+
+        if (root.parent) {
+            root.parent.remove(root);
+        }
+
+        root.clear();
+    }
+
+    disposePreviewObject(preview) {
+        if (!preview) {
+            return;
+        }
+
+        this.disposeObjectResources(preview.root);
+    }
+
+    disposePreview(id) {
+        const preview = this.previews.get(id);
+
+        if (!preview) {
             return false;
         }
 
-        meshThreeAdapter.disposeGroup(entry.group);
-        this.groups.delete(id);
+        this.disposePreviewObject(preview);
+        this.previews.delete(id);
 
         return true;
     }
 
     disposeAll() {
-        for (const id of [...this.groups.keys()]) {
-            this.disposePreview(id);
+        for (const preview of this.previews.values()) {
+            this.disposePreviewObject(preview);
         }
+
+        this.previews.clear();
+    }
+
+    setPreviewPosition(id, position) {
+        const preview = this.getPreview(id);
+
+        if (!preview) {
+            return false;
+        }
+
+        if (
+            !Array.isArray(position) ||
+            position.length !== 3 ||
+            !position.every(Number.isFinite)
+        ) {
+            throw new Error("預覽位置無效");
+        }
+
+        preview.root.position.set(
+            position[0] - preview.center[0],
+            position[1] - preview.center[1],
+            position[2] - preview.center[2]
+        );
+
+        return true;
     }
 }
 
-export const meshPreviewManager = new MeshPreviewManager();
+export const meshPreviewManager =
+    new MeshPreviewManager();
