@@ -1,4 +1,3 @@
-
 import { inventorySystem } from "../systems/inventory.js";
 import { eventBus } from "../core/event-bus.js";
 import { inventory3DPreview } from "./inventory-3d-preview.js";
@@ -48,6 +47,11 @@ class InventoryUI {
     constructor() {
         this.selectedStoneId = null;
         this.initialized = false;
+
+        // 記錄目前 3D 預覽所使用的資料。
+        this.previewStoneId = null;
+        this.previewGeometryRef = null;
+        this.previewJadeDataRef = null;
     }
 
     init() {
@@ -231,8 +235,8 @@ class InventoryUI {
             return;
         }
 
-        // 切換物品前先清理上一個 3D 預覽。
         inventory3DPreview.destroy();
+        this.resetPreviewReferences();
 
         this.selectedStoneId = stoneId;
 
@@ -263,9 +267,12 @@ class InventoryUI {
         });
     }
 
-    /**
-     * 建立 3D 預覽容器並交由新控制器管理。
-     */
+    resetPreviewReferences() {
+        this.previewStoneId = null;
+        this.previewGeometryRef = null;
+        this.previewJadeDataRef = null;
+    }
+
     renderStonePreview(stone) {
         const panel = getElement("inventory-detail");
 
@@ -317,13 +324,19 @@ class InventoryUI {
 
         if (!container) return;
 
-        if (
-            !stone.geometry ||
-            !Array.isArray(stone.geometry.vertices) ||
-            !Array.isArray(stone.geometry.faces) ||
-            stone.geometry.vertices.length < 4 ||
-            stone.geometry.faces.length < 4
-        ) {
+        const geometry = stone.geometry;
+
+        const validGeometry =
+            geometry &&
+            Array.isArray(geometry.vertices) &&
+            Array.isArray(geometry.faces) &&
+            geometry.vertices.length >= 4 &&
+            geometry.faces.length >= 4;
+
+        if (!validGeometry) {
+            inventory3DPreview.destroy();
+            this.resetPreviewReferences();
+
             container.replaceChildren();
 
             const message = document.createElement("div");
@@ -332,7 +345,7 @@ class InventoryUI {
                 "inventory-preview-fallback";
 
             message.textContent =
-                "這塊原石沒有 3D 幾何資料，可能來自舊存檔。";
+                "這塊原石沒有有效的 3D 幾何資料，可能來自舊存檔。";
 
             container.appendChild(message);
 
@@ -343,6 +356,14 @@ class InventoryUI {
             container,
             stone
         );
+
+        if (success) {
+            this.previewStoneId = stone.id;
+            this.previewGeometryRef = stone.geometry;
+            this.previewJadeDataRef = stone.jadeData ?? null;
+        } else {
+            this.resetPreviewReferences();
+        }
 
         if (!success && !container.firstChild) {
             const message = document.createElement("div");
@@ -357,9 +378,6 @@ class InventoryUI {
         }
     }
 
-    /**
-     * 顯示內部玉石資料。
-     */
     renderJadeData(jadeData) {
         const container = getElement("inventory-jade-list");
         const totalElement = getElement("detail-jade-volume");
@@ -475,9 +493,6 @@ class InventoryUI {
         return item;
     }
 
-    /**
-     * 背包資料更新時，刷新目前選取的物品。
-     */
     refreshSelectedStone() {
         if (!this.selectedStoneId) return;
 
@@ -514,23 +529,38 @@ class InventoryUI {
 
         this.renderJadeData(stone.jadeData);
 
-        // 若目前預覽容器不存在，才重新建立。
         const previewContainer = getElement(
             "inventory-stone-preview"
         );
 
         if (!previewContainer) {
             this.renderStonePreview(stone);
+            return;
+        }
+
+        const geometryChanged =
+            this.previewGeometryRef !== stone.geometry;
+
+        const jadeDataChanged =
+            this.previewJadeDataRef !== (stone.jadeData ?? null);
+
+        const stoneChanged =
+            this.previewStoneId !== stone.id;
+
+        if (
+            geometryChanged ||
+            jadeDataChanged ||
+            stoneChanged
+        ) {
+            this.renderStonePreview(stone);
         }
     }
 
-    /**
-     * 關閉詳情並釋放 3D 預覽。
-     */
     closeDetail() {
         this.selectedStoneId = null;
 
         inventory3DPreview.destroy();
+        this.resetPreviewReferences();
 
         const panel = getElement("inventory-detail");
 
