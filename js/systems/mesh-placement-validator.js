@@ -1,46 +1,38 @@
 
-/**
- * mesh-placement-validator.js
- *
- * 檢查一個三角網格經過縮放、旋轉、平移後，
- * 是否有抽樣頂點及面中心超出外部網格。
- *
- * 注意：
- * 這是抽樣檢查，不是數學上的完整包含證明。
- */
-
 import { meshContainmentUtils } from "./mesh-containment-utils.js";
 
 class MeshPlacementValidator {
     validateMesh(mesh) {
-        meshContainmentUtils.validateMesh(mesh);
+        return meshContainmentUtils.validateMesh(mesh);
     }
 
     rotateVertex(vertex, rotation = {}) {
-        const x = vertex[0];
-        const y = vertex[1];
-        const z = vertex[2];
-
         const rx = rotation.x ?? 0;
         const ry = rotation.y ?? 0;
         const rz = rotation.z ?? 0;
 
-        // X 軸旋轉
-        const x1 = x;
-        const y1 = y * Math.cos(rx) - z * Math.sin(rx);
-        const z1 = y * Math.sin(rx) + z * Math.cos(rx);
+        if (![rx, ry, rz].every(Number.isFinite)) {
+            throw new Error("旋轉角度無效");
+        }
 
-        // Y 軸旋轉
-        const x2 = x1 * Math.cos(ry) + z1 * Math.sin(ry);
-        const y2 = y1;
-        const z2 = -x1 * Math.sin(ry) + z1 * Math.cos(ry);
+        let [x, y, z] = vertex;
 
-        // Z 軸旋轉
-        return [
-            x2 * Math.cos(rz) - y2 * Math.sin(rz),
-            x2 * Math.sin(rz) + y2 * Math.cos(rz),
-            z2
+        [y, z] = [
+            y * Math.cos(rx) - z * Math.sin(rx),
+            y * Math.sin(rx) + z * Math.cos(rx)
         ];
+
+        [x, z] = [
+            x * Math.cos(ry) + z * Math.sin(ry),
+            -x * Math.sin(ry) + z * Math.cos(ry)
+        ];
+
+        [x, y] = [
+            x * Math.cos(rz) - y * Math.sin(rz),
+            x * Math.sin(rz) + y * Math.cos(rz)
+        ];
+
+        return [x, y, z];
     }
 
     transformMesh(mesh, placement = {}) {
@@ -50,49 +42,31 @@ class MeshPlacementValidator {
         const rotation = placement.rotation ?? {};
         const scale = placement.scale ?? 1;
 
-        if (
-            !Array.isArray(position) ||
-            position.length !== 3 ||
-            !position.every(Number.isFinite)
-        ) {
-            throw new Error("放置位置格式錯誤");
+        if (!Array.isArray(position) || position.length !== 3 ||
+            !position.every(Number.isFinite)) {
+            throw new Error("放置位置無效");
         }
 
         const scaleVector = typeof scale === "number"
             ? [scale, scale, scale]
             : scale;
 
-        if (
-            !Array.isArray(scaleVector) ||
+        if (!Array.isArray(scaleVector) ||
             scaleVector.length !== 3 ||
-            !scaleVector.every(value =>
-                Number.isFinite(value) && value > 0
-            )
-        ) {
-            throw new Error("縮放比例必須是正數");
+            !scaleVector.every(v => Number.isFinite(v) && v > 0)) {
+            throw new Error("縮放比例無效");
         }
 
-        const vertices = mesh.vertices.map(vertex => {
-            const scaled = [
-                vertex[0] * scaleVector[0],
-                vertex[1] * scaleVector[1],
-                vertex[2] * scaleVector[2]
-            ];
-
-            const rotated = this.rotateVertex(
-                scaled,
-                rotation
-            );
-
-            return [
-                rotated[0] + position[0],
-                rotated[1] + position[1],
-                rotated[2] + position[2]
-            ];
-        });
-
         return {
-            vertices,
+            vertices: mesh.vertices.map(vertex => {
+                const scaled = vertex.map((v, i) =>
+                    v * scaleVector[i]
+                );
+
+                const rotated = this.rotateVertex(scaled, rotation);
+
+                return rotated.map((v, i) => v + position[i]);
+            }),
             faces: mesh.faces.map(face => [...face])
         };
     }
@@ -100,7 +74,7 @@ class MeshPlacementValidator {
     getSamplePoints(mesh, includeFaceCenters = true) {
         this.validateMesh(mesh);
 
-        const points = mesh.vertices.map(vertex => [...vertex]);
+        const points = mesh.vertices.map(v => [...v]);
 
         if (includeFaceCenters) {
             for (const face of mesh.faces) {
@@ -123,19 +97,16 @@ class MeshPlacementValidator {
         this.validateMesh(hostMesh);
         this.validateMesh(innerMesh);
 
-        const transformed = this.transformMesh(
-            innerMesh,
-            placement
-        );
+        const transformed = this.transformMesh(innerMesh, placement);
 
-        const samplePoints = this.getSamplePoints(
+        const samples = this.getSamplePoints(
             transformed,
             options.includeFaceCenters !== false
         );
 
         const tolerance = options.tolerance ?? 1e-6;
 
-        const results = samplePoints.map(point =>
+        const results = samples.map(point =>
             meshContainmentUtils.isPointInside(
                 point,
                 hostMesh,
@@ -143,40 +114,26 @@ class MeshPlacementValidator {
             )
         );
 
-        const insideCount = results.filter(
-            result => result.inside
-        ).length;
-
-        const surfaceCount = results.filter(
-            result => result.onSurface
-        ).length;
-
-        const outsideCount = results.filter(
-            result => result.outside
-        ).length;
-
-        const valid = outsideCount === 0;
+        const insideCount = results.filter(r => r.inside).length;
+        const surfaceCount = results.filter(r => r.onSurface).length;
+        const outsideCount = results.filter(r => r.outside).length;
 
         return {
-            valid,
-            totalSamples: samplePoints.length,
+            valid: outsideCount === 0,
+            totalSamples: samples.length,
             insideCount,
             surfaceCount,
             outsideCount,
             transformedMesh: transformed,
             results,
-            message: valid
-                ? "目前抽樣點均位於模型內部或表面"
-                : "部分抽樣點位於模型外部"
+            message: outsideCount === 0
+                ? "抽樣點均位於外部模型內部或表面"
+                : "部分抽樣點位於外部模型之外"
         };
     }
 
     findFirstOutsidePoint(hostMesh, innerMesh, placement = {}) {
-        const transformed = this.transformMesh(
-            innerMesh,
-            placement
-        );
-
+        const transformed = this.transformMesh(innerMesh, placement);
         const points = this.getSamplePoints(transformed);
 
         for (let index = 0; index < points.length; index++) {
@@ -198,5 +155,4 @@ class MeshPlacementValidator {
     }
 }
 
-export const meshPlacementValidator =
-    new MeshPlacementValidator();
+export const meshPlacementValidator = new MeshPlacementValidator();
