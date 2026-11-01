@@ -2,7 +2,7 @@
 /**
  * mesh-plane-utils.js
  *
- * 三角網格與平面之間的幾何判斷。
+ * 三角網格與平面的幾何關係判斷。
  *
  * plane:
  * {
@@ -12,6 +12,31 @@
  */
 
 class MeshPlaneUtils {
+    EPSILON = 1e-8;
+
+    validateMesh(mesh) {
+        if (
+            !mesh ||
+            !Array.isArray(mesh.vertices) ||
+            !Array.isArray(mesh.faces) ||
+            mesh.vertices.length < 1
+        ) {
+            throw new Error("模型頂點資料不存在");
+        }
+
+        for (const vertex of mesh.vertices) {
+            if (
+                !Array.isArray(vertex) ||
+                vertex.length !== 3 ||
+                !vertex.every(Number.isFinite)
+            ) {
+                throw new Error("模型包含無效頂點");
+            }
+        }
+
+        return true;
+    }
+
     validatePlane(plane) {
         if (
             !plane ||
@@ -27,7 +52,7 @@ class MeshPlaneUtils {
 
         const length = Math.hypot(...plane.normal);
 
-        if (length <= 1e-10) {
+        if (length <= this.EPSILON) {
             throw new Error("平面法向量不可為零");
         }
 
@@ -41,16 +66,17 @@ class MeshPlaneUtils {
         const normalized = this.validatePlane(plane);
 
         return (
-            (vertex[0] - normalized.point[0]) * normalized.normal[0] +
-            (vertex[1] - normalized.point[1]) * normalized.normal[1] +
-            (vertex[2] - normalized.point[2]) * normalized.normal[2]
+            (vertex[0] - normalized.point[0]) *
+                normalized.normal[0] +
+            (vertex[1] - normalized.point[1]) *
+                normalized.normal[1] +
+            (vertex[2] - normalized.point[2]) *
+                normalized.normal[2]
         );
     }
 
     getDistances(mesh, plane) {
-        if (!mesh || !Array.isArray(mesh.vertices)) {
-            throw new Error("模型頂點資料不存在");
-        }
+        this.validateMesh(mesh);
 
         const normalized = this.validatePlane(plane);
 
@@ -60,76 +86,102 @@ class MeshPlaneUtils {
     }
 
     classifyMesh(mesh, plane, tolerance = 1e-6) {
+        if (!Number.isFinite(tolerance) || tolerance < 0) {
+            throw new Error("容許誤差設定錯誤");
+        }
+
         const distances = this.getDistances(mesh, plane);
 
         const min = Math.min(...distances);
         const max = Math.max(...distances);
 
+        const hasPositive = distances.some(
+            value => value > tolerance
+        );
+
+        const hasNegative = distances.some(
+            value => value < -tolerance
+        );
+
+        const hasOnPlane = distances.some(
+            value => Math.abs(value) <= tolerance
+        );
+
         let classification;
 
-        if (min > tolerance) {
-            classification = "positive";
-        } else if (max < -tolerance) {
-            classification = "negative";
-        } else if (
-            Math.abs(min) <= tolerance &&
-            Math.abs(max) <= tolerance
-        ) {
-            classification = "coplanar";
-        } else {
+        if (hasPositive && hasNegative) {
             classification = "crossing";
+        } else if (hasPositive && hasOnPlane) {
+            classification = "positive-touching";
+        } else if (hasNegative && hasOnPlane) {
+            classification = "negative-touching";
+        } else if (hasPositive) {
+            classification = "positive";
+        } else if (hasNegative) {
+            classification = "negative";
+        } else {
+            classification = "coplanar";
         }
 
         return {
             classification,
             minDistance: min,
             maxDistance: max,
+            hasPositive,
+            hasNegative,
+            hasOnPlane,
             distances
         };
     }
 
-    classifyWithThickness(mesh, plane, thickness) {
-        if (!Number.isFinite(thickness) || thickness < 0) {
-            throw new Error("厚度必須是大於或等於零的數值");
+    classifyWithThickness(mesh, plane, thickness, tolerance = 1e-6) {
+        if (
+            !Number.isFinite(thickness) ||
+            thickness < 0
+        ) {
+            throw new Error("厚度必須大於或等於零");
         }
 
-        const result = this.classifyMesh(mesh, plane);
+        const result = this.classifyMesh(
+            mesh,
+            plane,
+            tolerance
+        );
 
         const half = thickness / 2;
 
-        if (result.minDistance > half) {
-            return {
-                ...result,
-                region: "positive"
-            };
-        }
+        const min = result.minDistance;
+        const max = result.maxDistance;
 
-        if (result.maxDistance < -half) {
-            return {
-                ...result,
-                region: "negative"
-            };
-        }
+        let region;
 
-        if (
-            result.minDistance >= -half &&
-            result.maxDistance <= half
+        if (min > half + tolerance) {
+            region = "positive";
+        } else if (max < -half - tolerance) {
+            region = "negative";
+        } else if (
+            min >= -half - tolerance &&
+            max <= half + tolerance
         ) {
-            return {
-                ...result,
-                region: "inside-gap"
-            };
+            region = "inside-gap";
+        } else {
+            region = "intersects-gap";
         }
 
         return {
             ...result,
-            region: "intersects-gap"
+            region,
+            halfThickness: half
         };
     }
 
     projectPoint(vertex, plane) {
         const normalized = this.validatePlane(plane);
-        const distance = this.signedDistance(vertex, normalized);
+
+        const distance = this.signedDistance(
+            vertex,
+            normalized
+        );
 
         return [
             vertex[0] - normalized.normal[0] * distance,
@@ -139,9 +191,7 @@ class MeshPlaneUtils {
     }
 
     getPlaneBounds(mesh, plane) {
-        if (!mesh || !Array.isArray(mesh.vertices)) {
-            throw new Error("模型頂點資料不存在");
-        }
+        this.validateMesh(mesh);
 
         const projected = mesh.vertices.map(vertex =>
             this.projectPoint(vertex, plane)
@@ -160,7 +210,10 @@ class MeshPlaneUtils {
         return {
             min,
             max,
-            size: max.map((value, axis) => value - min[axis])
+            size: max.map((value, axis) =>
+                value - min[axis]
+            ),
+            vertices: projected
         };
     }
 }
