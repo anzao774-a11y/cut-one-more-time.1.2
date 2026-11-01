@@ -494,6 +494,14 @@ class CuttingUI {
                 side: THREE.DoubleSide,
                 depthWrite: false
             });
+
+        this.materials.jade =
+            new THREE.MeshStandardMaterial({
+                color: 0x3f9b70,
+                roughness: 0.2,
+                metalness: 0.03,
+                side: THREE.DoubleSide
+            });
     }
 
 
@@ -551,6 +559,22 @@ class CuttingUI {
         stone.receiveShadow = true;
 
         return stone;
+    }
+
+    createJadeMesh(mass) {
+        if (!mass?.geometry) return null;
+
+        const jade = new THREE.Mesh(
+            this.meshToGeometry(mass.geometry),
+            this.materials.jade
+        );
+
+        jade.name = mass.name ?? "內部玉石";
+        jade.userData.jadeType = mass.jadeType ?? null;
+        jade.castShadow = true;
+        jade.receiveShadow = true;
+
+        return jade;
     }
 
 
@@ -1161,7 +1185,7 @@ class CuttingUI {
     }
 
 
-    saveCutPieces(result) {
+    saveCutPieces(result, jadeSplit = null) {
         if (this.isTestMode) {
             return [];
         }
@@ -1212,7 +1236,7 @@ class CuttingUI {
             ...saveData.inventory
         ];
 
-        const jadeSplit = this.splitJadeData(
+        jadeSplit ??= this.splitJadeData(
             originalStone,
             result
         );
@@ -1357,13 +1381,17 @@ class CuttingUI {
 
             this.currentResult = result;
 
-            this.displayResults(result);
+            const jadeSplit = this.isTestMode
+                ? { positive: null, negative: null }
+                : this.splitJadeData(this.currentStone, result);
+
+            this.displayResults(result, jadeSplit);
 
             if (this.elements.results) {
                 this.elements.results.hidden = false;
             }
 
-            const savedRecords = this.saveCutPieces(result);
+            const savedRecords = this.saveCutPieces(result, jadeSplit);
 
 
             if (this.isTestMode) {
@@ -1398,7 +1426,7 @@ class CuttingUI {
     // 顯示切割結果
     // ==========================================
 
-    displayResults(result) {
+    displayResults(result, jadeSplit = null) {
         this.clearGroup(this.originalGroup);
         this.clearGroup(this.resultGroup);
 
@@ -1420,6 +1448,23 @@ class CuttingUI {
 
         positive.position.x = -1.35;
         negative.position.x = 1.35;
+
+        const positiveMasses = jadeSplit?.positive?.masses ?? [];
+        const negativeMasses = jadeSplit?.negative?.masses ?? [];
+
+        for (const mass of positiveMasses) {
+            const jade = this.createJadeMesh(mass);
+            if (!jade) continue;
+            jade.position.x = -1.35;
+            this.resultGroup.add(jade);
+        }
+
+        for (const mass of negativeMasses) {
+            const jade = this.createJadeMesh(mass);
+            if (!jade) continue;
+            jade.position.x = 1.35;
+            this.resultGroup.add(jade);
+        }
 
         this.resultGroup.add(
             positive,
