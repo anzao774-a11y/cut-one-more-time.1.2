@@ -2,13 +2,7 @@
 import * as THREE from "three";
 
 /**
- * 專案 Mesh 資料與 Three.js 之間的轉換工具。
- *
- * Mesh 格式：
- * {
- *   vertices: [[x, y, z], ...],
- *   faces: [[a, b, c], ...]
- * }
+ * Mesh 與 Three.js 轉換工具。
  */
 
 const JADE_COLORS = {
@@ -45,41 +39,26 @@ class MeshThreeAdapter {
     }
 
     validateMesh(mesh) {
-        if (
-            !mesh ||
-            !Array.isArray(mesh.vertices) ||
-            !Array.isArray(mesh.faces)
-        ) {
+        if (!mesh || !Array.isArray(mesh.vertices) ||
+            !Array.isArray(mesh.faces)) {
             throw new Error("模型資料格式錯誤");
         }
 
-        if (
-            mesh.vertices.length < 4 ||
-            mesh.faces.length < 4
-        ) {
+        if (mesh.vertices.length < 4 || mesh.faces.length < 4) {
             throw new Error("模型資料不足");
         }
 
-        for (const vertex of mesh.vertices) {
-            if (
-                !Array.isArray(vertex) ||
-                vertex.length !== 3 ||
-                !vertex.every(Number.isFinite)
-            ) {
-                throw new Error("模型頂點資料無效");
+        for (const v of mesh.vertices) {
+            if (!Array.isArray(v) || v.length !== 3 ||
+                !v.every(Number.isFinite)) {
+                throw new Error("模型頂點無效");
             }
         }
 
-        for (const face of mesh.faces) {
-            if (
-                !Array.isArray(face) ||
-                face.length !== 3 ||
-                !face.every(index =>
-                    Number.isInteger(index) &&
-                    index >= 0 &&
-                    index < mesh.vertices.length
-                )
-            ) {
+        for (const f of mesh.faces) {
+            if (!Array.isArray(f) || f.length !== 3 ||
+                !f.every(i => Number.isInteger(i) &&
+                    i >= 0 && i < mesh.vertices.length)) {
                 throw new Error("模型面資料無效");
             }
         }
@@ -90,38 +69,17 @@ class MeshThreeAdapter {
     createGeometry(meshData) {
         this.validateMesh(meshData);
 
-        const positions = [];
-
-        for (const vertex of meshData.vertices) {
-            positions.push(
-                vertex[0],
-                vertex[1],
-                vertex[2]
-            );
-        }
-
-        const indices = [];
-
-        for (const face of meshData.faces) {
-            indices.push(
-                face[0],
-                face[1],
-                face[2]
-            );
-        }
+        const positions = meshData.vertices.flat();
+        const indices = meshData.faces.flat();
 
         const geometry = new THREE.BufferGeometry();
 
         geometry.setAttribute(
             "position",
-            new THREE.Float32BufferAttribute(
-                positions,
-                3
-            )
+            new THREE.Float32BufferAttribute(positions, 3)
         );
 
         geometry.setIndex(indices);
-
         geometry.computeVertexNormals();
         geometry.computeBoundingBox();
         geometry.computeBoundingSphere();
@@ -140,12 +98,10 @@ class MeshThreeAdapter {
     }
 
     createJadeMaterial(jadeType, options = {}) {
-        const color =
-            JADE_COLORS[jadeType] ??
-            this.defaultJadeColor;
-
         return new THREE.MeshStandardMaterial({
-            color,
+            color: options.color ??
+                JADE_COLORS[jadeType] ??
+                this.defaultJadeColor,
             roughness: options.roughness ?? 0.2,
             metalness: options.metalness ?? 0.03,
             transparent: options.transparent ?? false,
@@ -158,20 +114,13 @@ class MeshThreeAdapter {
     createMesh(meshData, material, options = {}) {
         const geometry = this.createGeometry(meshData);
 
-        const mesh = new THREE.Mesh(
-            geometry,
-            material
-        );
+        const mesh = new THREE.Mesh(geometry, material);
 
         mesh.castShadow = options.castShadow ?? true;
         mesh.receiveShadow = options.receiveShadow ?? true;
 
         if (options.position) {
-            mesh.position.set(
-                options.position[0] ?? 0,
-                options.position[1] ?? 0,
-                options.position[2] ?? 0
-            );
+            mesh.position.set(...options.position);
         }
 
         if (options.rotation) {
@@ -183,15 +132,15 @@ class MeshThreeAdapter {
         }
 
         if (options.scale !== undefined) {
-            const scale = options.scale;
-
-            if (typeof scale === "number") {
-                mesh.scale.setScalar(scale);
+            if (typeof options.scale === "number") {
+                mesh.scale.setScalar(options.scale);
+            } else if (Array.isArray(options.scale)) {
+                mesh.scale.set(...options.scale);
             } else {
                 mesh.scale.set(
-                    scale.x ?? 1,
-                    scale.y ?? 1,
-                    scale.z ?? 1
+                    options.scale.x ?? 1,
+                    options.scale.y ?? 1,
+                    options.scale.z ?? 1
                 );
             }
         }
@@ -200,28 +149,21 @@ class MeshThreeAdapter {
     }
 
     createStoneMesh(meshData, options = {}) {
-        const material = this.createStoneMaterial(options);
-
         return this.createMesh(
             meshData,
-            material,
+            this.createStoneMaterial(options),
             options
         );
     }
 
     createJadeMesh(mass, options = {}) {
-        if (!mass || !mass.geometry) {
+        if (!mass?.geometry) {
             throw new Error("玉料缺少幾何資料");
         }
 
-        const material = this.createJadeMaterial(
-            mass.jadeType,
-            options
-        );
-
         const mesh = this.createMesh(
             mass.geometry,
-            material,
+            this.createJadeMaterial(mass.jadeType, options),
             options
         );
 
@@ -246,44 +188,30 @@ class MeshThreeAdapter {
             throw new Error("場景群組無效");
         }
 
-        const stoneMesh = this.createStoneMesh(
-            meshData,
-            options
-        );
+        const mesh = this.createStoneMesh(meshData, options);
+        mesh.name = options.name ?? "原石";
+        group.add(mesh);
 
-        stoneMesh.name = options.name ?? "原石";
-
-        group.add(stoneMesh);
-
-        return stoneMesh;
+        return mesh;
     }
 
     addJadeToGroup(group, masses, options = {}) {
-        if (!group?.isObject3D) {
-            throw new Error("場景群組無效");
+        if (!group?.isObject3D || !Array.isArray(masses)) {
+            throw new Error("玉料群組或清單無效");
         }
 
-        if (!Array.isArray(masses)) {
-            throw new Error("玉料清單格式錯誤");
-        }
-
-        const createdMeshes = [];
+        const created = [];
 
         try {
             for (const mass of masses) {
-                const jadeMesh = this.createJadeMesh(
-                    mass,
-                    options
-                );
-
-                group.add(jadeMesh);
-                createdMeshes.push(jadeMesh);
+                const mesh = this.createJadeMesh(mass, options);
+                group.add(mesh);
+                created.push(mesh);
             }
 
-            return createdMeshes;
-
+            return created;
         } catch (error) {
-            for (const mesh of createdMeshes) {
+            for (const mesh of created) {
                 group.remove(mesh);
                 mesh.geometry.dispose();
                 mesh.material.dispose();
@@ -296,21 +224,23 @@ class MeshThreeAdapter {
     disposeGroup(group) {
         if (!group?.isObject3D) return;
 
+        const geometries = new Set();
+        const materials = new Set();
+
         group.traverse(object => {
-            if (object.geometry) {
-                object.geometry.dispose();
-            }
+            if (object.geometry) geometries.add(object.geometry);
 
             if (object.material) {
-                const materials = Array.isArray(object.material)
+                const list = Array.isArray(object.material)
                     ? object.material
                     : [object.material];
 
-                for (const material of materials) {
-                    material.dispose();
-                }
+                list.forEach(material => materials.add(material));
             }
         });
+
+        geometries.forEach(item => item.dispose());
+        materials.forEach(item => item.dispose());
 
         group.clear();
     }
