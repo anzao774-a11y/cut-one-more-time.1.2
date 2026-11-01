@@ -1,9 +1,7 @@
 
-import * as THREE from "three";
-import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
-
 import { inventorySystem } from "../systems/inventory.js";
 import { eventBus } from "../core/event-bus.js";
+import { inventory3DPreview } from "./inventory-3d-preview.js";
 
 const RARITY_NAMES = {
     gypsy: "吉普賽",
@@ -18,21 +16,16 @@ const STATUS_NAMES = {
     cut: "已切割"
 };
 
-const RARITY_COLORS = {
-    gypsy: 0xaaa18d,
-    common: 0x8fae79,
-    rare: 0x79a9d2,
-    epic: 0xbd8bd5,
-    legendary: 0xe3bd70
-};
-
 function getElement(id) {
     return document.getElementById(id);
 }
 
 function formatNumber(value, digits = 1) {
     const number = Number(value);
-    return Number.isFinite(number) ? number.toFixed(digits) : "0";
+
+    return Number.isFinite(number)
+        ? number.toFixed(digits)
+        : "0";
 }
 
 function formatDate(value) {
@@ -55,19 +48,6 @@ class InventoryUI {
     constructor() {
         this.selectedStoneId = null;
         this.initialized = false;
-
-        this.preview = {
-            scene: null,
-            camera: null,
-            renderer: null,
-            controls: null,
-            mesh: null,
-            animationFrame: null,
-            resizeObserver: null,
-            container: null,
-            geometry: null,
-            material: null
-        };
     }
 
     init() {
@@ -155,9 +135,12 @@ class InventoryUI {
 
     renderList() {
         const container = getElement("inventory-list");
+
         if (!container) return;
 
-        const stones = inventorySystem.getSorted(this.getFilters());
+        const stones = inventorySystem.getSorted(
+            this.getFilters()
+        );
 
         const count = getElement("inventory-result-count");
 
@@ -180,15 +163,18 @@ class InventoryUI {
 
             const description = document.createElement("p");
             description.textContent =
-                "前往抽取原石，讓收藏室慢慢豐富起來。";
+                "目前收藏清單中沒有符合條件的項目。";
 
             empty.append(symbol, title, description);
             container.appendChild(empty);
+
             return;
         }
 
         for (const stone of stones) {
-            container.appendChild(this.createStoneCard(stone));
+            container.appendChild(
+                this.createStoneCard(stone)
+            );
         }
     }
 
@@ -211,13 +197,16 @@ class InventoryUI {
 
         const rarity = document.createElement("span");
         rarity.className = "inventory-card-rarity";
-        rarity.textContent = RARITY_NAMES[stone.rarity] ?? "未知稀有度";
+        rarity.textContent =
+            RARITY_NAMES[stone.rarity] ?? "未知稀有度";
 
         const title = document.createElement("strong");
-        title.textContent = `${RARITY_NAMES[stone.rarity] ?? "未知"}原石`;
+        title.textContent =
+            `${RARITY_NAMES[stone.rarity] ?? "未知"}原石`;
 
         const status = document.createElement("small");
-        status.textContent = STATUS_NAMES[stone.status] ?? "狀態未知";
+        status.textContent =
+            STATUS_NAMES[stone.status] ?? "狀態未知";
 
         const date = document.createElement("small");
         date.textContent = formatDate(stone.obtainedAt);
@@ -242,9 +231,13 @@ class InventoryUI {
             return;
         }
 
+        // 切換物品前先清理上一個 3D 預覽。
+        inventory3DPreview.destroy();
+
         this.selectedStoneId = stoneId;
 
         const panel = getElement("inventory-detail");
+
         if (!panel) return;
 
         panel.hidden = false;
@@ -270,17 +263,24 @@ class InventoryUI {
         });
     }
 
+    /**
+     * 建立 3D 預覽容器並交由新控制器管理。
+     */
     renderStonePreview(stone) {
         const panel = getElement("inventory-detail");
 
         if (!panel) return;
 
-        let section = getElement("inventory-stone-preview-section");
+        let section = getElement(
+            "inventory-stone-preview-section"
+        );
 
         if (!section) {
             section = document.createElement("section");
+
             section.id = "inventory-stone-preview-section";
-            section.className = "inventory-stone-preview-section";
+            section.className =
+                "inventory-stone-preview-section";
 
             const heading = document.createElement("div");
             heading.className = "inventory-preview-heading";
@@ -294,12 +294,15 @@ class InventoryUI {
             heading.append(title, hint);
 
             const container = document.createElement("div");
+
             container.id = "inventory-stone-preview";
             container.className = "inventory-stone-preview";
 
             section.append(heading, container);
 
-            const meta = panel.querySelector(".inventory-detail-meta");
+            const meta = panel.querySelector(
+                ".inventory-detail-meta"
+            );
 
             if (meta) {
                 meta.after(section);
@@ -308,325 +311,55 @@ class InventoryUI {
             }
         }
 
-        const container = getElement("inventory-stone-preview");
+        const container = getElement(
+            "inventory-stone-preview"
+        );
 
         if (!container) return;
 
-        this.destroyPreview();
-
-        const geometryData = stone.geometry;
-
         if (
-            !geometryData ||
-            !Array.isArray(geometryData.vertices) ||
-            !Array.isArray(geometryData.faces) ||
-            geometryData.vertices.length < 4 ||
-            geometryData.faces.length < 4
+            !stone.geometry ||
+            !Array.isArray(stone.geometry.vertices) ||
+            !Array.isArray(stone.geometry.faces) ||
+            stone.geometry.vertices.length < 4 ||
+            stone.geometry.faces.length < 4
         ) {
             container.replaceChildren();
 
             const message = document.createElement("div");
-            message.className = "inventory-preview-fallback";
+
+            message.className =
+                "inventory-preview-fallback";
+
             message.textContent =
-                "這塊原石沒有 3D 幾何資料。可能是舊存檔中的原石。";
+                "這塊原石沒有 3D 幾何資料，可能來自舊存檔。";
 
             container.appendChild(message);
+
             return;
         }
 
-        this.createPreviewScene(container, stone);
-    }
+        const success = inventory3DPreview.mount(
+            container,
+            stone
+        );
 
-    createPreviewScene(container, stone) {
-        const preview = this.preview;
-
-        preview.container = container;
-
-        try {
-            preview.scene = new THREE.Scene();
-            preview.scene.background = new THREE.Color("#20231e");
-
-            preview.camera = new THREE.PerspectiveCamera(
-                42,
-                1,
-                0.1,
-                100
-            );
-
-            preview.camera.position.set(3.2, 2.4, 3.6);
-
-            preview.renderer = new THREE.WebGLRenderer({
-                antialias: true,
-                alpha: false
-            });
-
-            preview.renderer.setPixelRatio(
-                Math.min(window.devicePixelRatio || 1, 2)
-            );
-
-            preview.renderer.outputColorSpace = THREE.SRGBColorSpace;
-
-            container.replaceChildren(preview.renderer.domElement);
-
-            preview.controls = new OrbitControls(
-                preview.camera,
-                preview.renderer.domElement
-            );
-
-            preview.controls.enableDamping = true;
-            preview.controls.dampingFactor = 0.06;
-            preview.controls.enablePan = false;
-            preview.controls.minDistance = 1.8;
-            preview.controls.maxDistance = 8;
-            preview.controls.autoRotate = true;
-            preview.controls.autoRotateSpeed = 1.2;
-
-            preview.scene.add(
-                new THREE.AmbientLight(0xffffff, 1.8)
-            );
-
-            const keyLight = new THREE.DirectionalLight(
-                0xffe2b0,
-                3
-            );
-
-            keyLight.position.set(4, 5, 5);
-            preview.scene.add(keyLight);
-
-            const fillLight = new THREE.DirectionalLight(
-                0x9db7a0,
-                1.5
-            );
-
-            fillLight.position.set(-4, 1, -3);
-            preview.scene.add(fillLight);
-
-            const rimLight = new THREE.PointLight(
-                0xd5b56c,
-                16,
-                10
-            );
-
-            rimLight.position.set(0, 3, -3);
-            preview.scene.add(rimLight);
-
-            preview.geometry = this.createPreviewGeometry(
-                stone.geometry
-            );
-
-            const color =
-                RARITY_COLORS[stone.rarity] ?? 0xaaa18d;
-
-            preview.material = new THREE.MeshStandardMaterial({
-                color,
-                roughness: 0.48,
-                metalness: 0.08,
-                flatShading: true
-            });
-
-            preview.mesh = new THREE.Mesh(
-                preview.geometry,
-                preview.material
-            );
-
-            preview.mesh.castShadow = true;
-            preview.mesh.receiveShadow = true;
-
-            preview.scene.add(preview.mesh);
-
-            const grid = new THREE.GridHelper(
-                5,
-                10,
-                0x6b694e,
-                0x353a30
-            );
-
-            grid.position.y = -1.2;
-            preview.scene.add(grid);
-
-            preview.resizeObserver = new ResizeObserver(() => {
-                this.resizePreview();
-            });
-
-            preview.resizeObserver.observe(container);
-
-            this.resizePreview();
-
-            const animate = () => {
-                if (!preview.renderer) return;
-
-                preview.animationFrame =
-                    requestAnimationFrame(animate);
-
-                preview.controls?.update();
-
-                preview.renderer.render(
-                    preview.scene,
-                    preview.camera
-                );
-            };
-
-            animate();
-
-        } catch (error) {
-            console.error("原石 3D 預覽建立失敗：", error);
-
-            this.destroyPreview();
-
-            container.replaceChildren();
-
+        if (!success && !container.firstChild) {
             const message = document.createElement("div");
-            message.className = "inventory-preview-fallback";
+
+            message.className =
+                "inventory-preview-fallback";
+
             message.textContent =
-                "3D 預覽暫時無法建立，請重新開啟原石資訊。";
+                "目前無法顯示 3D 模型，請稍後再試。";
 
             container.appendChild(message);
         }
     }
 
-    createPreviewGeometry(meshData) {
-        const vertices = meshData.vertices;
-        const faces = meshData.faces;
-
-        const positions = [];
-        const indices = [];
-
-        for (const vertex of vertices) {
-            if (
-                !Array.isArray(vertex) ||
-                vertex.length < 3 ||
-                !vertex.slice(0, 3).every(Number.isFinite)
-            ) {
-                throw new Error("原石頂點資料格式錯誤");
-            }
-
-            positions.push(
-                vertex[0],
-                vertex[1],
-                vertex[2]
-            );
-        }
-
-        for (const face of faces) {
-            if (
-                !Array.isArray(face) ||
-                face.length !== 3 ||
-                !face.every(
-                    index =>
-                        Number.isInteger(index) &&
-                        index >= 0 &&
-                        index < vertices.length
-                )
-            ) {
-                throw new Error("原石面資料格式錯誤");
-            }
-
-            indices.push(face[0], face[1], face[2]);
-        }
-
-        const geometry = new THREE.BufferGeometry();
-
-        geometry.setAttribute(
-            "position",
-            new THREE.Float32BufferAttribute(positions, 3)
-        );
-
-        geometry.setIndex(indices);
-
-        geometry.computeVertexNormals();
-        geometry.computeBoundingBox();
-        geometry.computeBoundingSphere();
-
-        const center = geometry.boundingBox.getCenter(
-            new THREE.Vector3()
-        );
-
-        geometry.translate(
-            -center.x,
-            -center.y,
-            -center.z
-        );
-
-        const size = geometry.boundingBox.getSize(
-            new THREE.Vector3()
-        );
-
-        const maxDimension = Math.max(
-            size.x,
-            size.y,
-            size.z,
-            0.001
-        );
-
-        const scale = 1.8 / maxDimension;
-
-        geometry.scale(scale, scale, scale);
-
-        geometry.computeVertexNormals();
-        geometry.computeBoundingSphere();
-
-        return geometry;
-    }
-
-    resizePreview() {
-        const preview = this.preview;
-
-        if (
-            !preview.renderer ||
-            !preview.camera ||
-            !preview.container
-        ) {
-            return;
-        }
-
-        const width = preview.container.clientWidth;
-        const height = preview.container.clientHeight;
-
-        if (width <= 0 || height <= 0) return;
-
-        preview.camera.aspect = width / height;
-        preview.camera.updateProjectionMatrix();
-
-        preview.renderer.setSize(width, height);
-    }
-
-    destroyPreview() {
-        const preview = this.preview;
-
-        if (preview.animationFrame !== null) {
-            cancelAnimationFrame(preview.animationFrame);
-            preview.animationFrame = null;
-        }
-
-        preview.resizeObserver?.disconnect();
-        preview.resizeObserver = null;
-
-        preview.controls?.dispose();
-        preview.controls = null;
-
-        preview.geometry?.dispose();
-        preview.geometry = null;
-
-        preview.material?.dispose();
-        preview.material = null;
-
-        if (preview.renderer) {
-            preview.renderer.dispose();
-
-            if (preview.renderer.domElement.parentNode) {
-                preview.renderer.domElement.parentNode.removeChild(
-                    preview.renderer.domElement
-                );
-            }
-        }
-
-        preview.renderer = null;
-        preview.scene = null;
-        preview.camera = null;
-        preview.mesh = null;
-        preview.container = null;
-    }
-
+    /**
+     * 顯示內部玉石資料。
+     */
     renderJadeData(jadeData) {
         const container = getElement("inventory-jade-list");
         const totalElement = getElement("detail-jade-volume");
@@ -641,10 +374,13 @@ class InventoryUI {
             }
 
             const empty = document.createElement("div");
+
             empty.className = "inventory-detail-empty";
-            empty.textContent = "這塊原石沒有內部玉石資料。";
+            empty.textContent =
+                "這塊原石沒有內部玉石資料。";
 
             container.appendChild(empty);
+
             return;
         }
 
@@ -659,15 +395,20 @@ class InventoryUI {
 
         if (masses.length === 0) {
             const empty = document.createElement("div");
+
             empty.className = "inventory-detail-empty";
-            empty.textContent = "目前沒有符合保留條件的玉石質量。";
+            empty.textContent =
+                "目前沒有符合保留條件的玉石質量。";
 
             container.appendChild(empty);
+
             return;
         }
 
         for (const mass of masses) {
-            container.appendChild(this.createJadeItem(mass));
+            container.appendChild(
+                this.createJadeItem(mass)
+            );
         }
 
         if (
@@ -675,7 +416,9 @@ class InventoryUI {
             jadeData.discardedMasses.length > 0
         ) {
             const note = document.createElement("div");
+
             note.className = "inventory-detail-empty";
+
             note.textContent =
                 `另有 ${jadeData.discardedMasses.length} 個低於 5% 的獨立質量未列入保留清單。`;
 
@@ -694,7 +437,8 @@ class InventoryUI {
         name.textContent = mass.name ?? "未知玉石";
 
         const volume = document.createElement("span");
-        volume.textContent = `${formatNumber(mass.volumePercent)}%`;
+        volume.textContent =
+            `${formatNumber(mass.volumePercent)}%`;
 
         top.append(name, volume);
 
@@ -706,10 +450,14 @@ class InventoryUI {
 
         const width = Math.min(
             100,
-            Math.max(0, Number(mass.volumePercent) || 0)
+            Math.max(
+                0,
+                Number(mass.volumePercent) || 0
+            )
         );
 
         fill.style.width = `${width}%`;
+
         bar.appendChild(fill);
 
         const note = document.createElement("div");
@@ -727,10 +475,15 @@ class InventoryUI {
         return item;
     }
 
+    /**
+     * 背包資料更新時，刷新目前選取的物品。
+     */
     refreshSelectedStone() {
         if (!this.selectedStoneId) return;
 
-        const stone = inventorySystem.getById(this.selectedStoneId);
+        const stone = inventorySystem.getById(
+            this.selectedStoneId
+        );
 
         if (!stone) {
             this.closeDetail();
@@ -742,6 +495,7 @@ class InventoryUI {
 
     updateDetailWithoutScroll(stone) {
         const panel = getElement("inventory-detail");
+
         if (!panel) return;
 
         panel.hidden = false;
@@ -760,6 +514,7 @@ class InventoryUI {
 
         this.renderJadeData(stone.jadeData);
 
+        // 若目前預覽容器不存在，才重新建立。
         const previewContainer = getElement(
             "inventory-stone-preview"
         );
@@ -769,10 +524,13 @@ class InventoryUI {
         }
     }
 
+    /**
+     * 關閉詳情並釋放 3D 預覽。
+     */
     closeDetail() {
         this.selectedStoneId = null;
 
-        this.destroyPreview();
+        inventory3DPreview.destroy();
 
         const panel = getElement("inventory-detail");
 
