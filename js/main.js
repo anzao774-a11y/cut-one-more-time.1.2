@@ -1,3 +1,4 @@
+
 import { saveManager } from "./core/save-manager.js";
 import { eventBus } from "./core/event-bus.js";
 
@@ -9,7 +10,7 @@ import { cuttingUI } from "./ui/cutting-ui.js";
 import { cuttingInventoryBridge } from "./ui/cutting-inventory-bridge.js";
 
 import { audioSystem } from "./systems/audio-system.js";
-
+import { workshopProgression } from "./systems/workshop-progression.js";
 
 function updateGoldDisplay(gold) {
     const element = document.getElementById("gold-balance");
@@ -19,7 +20,6 @@ function updateGoldDisplay(gold) {
             Number(gold).toLocaleString("en-US");
     }
 }
-
 
 function initializeAudio() {
     const unlockAudio = () => {
@@ -47,7 +47,6 @@ function initializeAudio() {
     );
 }
 
-
 function initializeGame() {
     const saveData = saveManager.load();
 
@@ -60,8 +59,16 @@ function initializeGame() {
 
     saveData.statistics ??= {
         totalPulls: 0,
-        totalCuts: 0
+        totalCuts: 0,
+        totalJadeFound: 0,
+        totalJadeSold: 0,
+        totalCrafts: 0,
+        totalGoldEarned: 0,
+        totalGoldSpent: 0
     };
+
+    workshopProgression.getDailyEvent();
+    workshopProgression.checkAchievements();
 
     saveManager.save();
 
@@ -84,13 +91,11 @@ function initializeGame() {
 
     cuttingUI.init();
 
-    // 必須在背包與切割工作台初始化完成後執行。
     cuttingInventoryBridge.init();
 
     console.log(
-        "再切一刀就好：遊戲、背包與 3D 切割工作台初始化完成"
+        "再切一刀就好：核心系統初始化完成"
     );
 }
-
 
 initializeGame();
