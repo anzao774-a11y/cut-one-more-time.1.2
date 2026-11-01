@@ -1,4 +1,3 @@
-
 import { saveManager } from "../core/save-manager.js";
 import { eventBus } from "../core/event-bus.js";
 
@@ -30,6 +29,57 @@ class InventorySystem {
     getCut() {
         return this.getAll().filter(
             stone => stone.status === "cut"
+        );
+    }
+
+    // 可送往工作台的原石：
+    // 1. 尚未切割的原石。
+    // 2. 已切割、具有來源紀錄及有效幾何資料的切割產物。
+    getCuttable() {
+        return this.getAll().filter(stone => {
+            if (!stone || !stone.id) {
+                return false;
+            }
+
+            if (stone.status === "uncut") {
+                return this.hasValidGeometry(stone);
+            }
+
+            const isCutPiece =
+                stone.status === "cut" &&
+                Boolean(stone.sourceStoneId) &&
+                Boolean(stone.cutSide);
+
+            return isCutPiece &&
+                this.hasValidGeometry(stone);
+        });
+    }
+
+    hasValidGeometry(stone) {
+        const geometry = stone?.geometry;
+
+        if (
+            !geometry ||
+            !Array.isArray(geometry.vertices) ||
+            !Array.isArray(geometry.faces) ||
+            geometry.vertices.length < 4 ||
+            geometry.faces.length < 4
+        ) {
+            return false;
+        }
+
+        return geometry.vertices.every(vertex =>
+            Array.isArray(vertex) &&
+            vertex.length >= 3 &&
+            vertex.slice(0, 3).every(Number.isFinite)
+        ) && geometry.faces.every(face =>
+            Array.isArray(face) &&
+            face.length === 3 &&
+            face.every(index =>
+                Number.isInteger(index) &&
+                index >= 0 &&
+                index < geometry.vertices.length
+            )
         );
     }
 
