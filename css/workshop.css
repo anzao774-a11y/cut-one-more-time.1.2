@@ -1,0 +1,459 @@
+
+.workshop-stat-panel,
+.workshop-market-event,
+.workshop-level-panel,
+.workshop-cat-panel,
+.workshop-info-note {
+    background: #20251f;
+    border: 1px solid #41483d;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 22px;
+}
+
+.workshop-stat-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.workshop-stat-panel span,
+.workshop-market-event > span {
+    color: #a9ad9e;
+    font-size: 13px;
+}
+
+.workshop-stat-panel strong {
+    color: #d7bd79;
+    font-size: 22px;
+}
+
+.workshop-market-event h3 {
+    color: #e3d09a;
+    margin: 10px 0 6px;
+}
+
+.workshop-market-event p,
+.workshop-info-note {
+    color: #b9bcae;
+    line-height: 1.7;
+}
+
+.workshop-card-list {
+    display: grid;
+    gap: 12px;
+}
+
+.workshop-item-card,
+.workshop-processing-card,
+.workshop-achievement-card {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 17px;
+    background: #242922;
+    border: 1px solid #41483d;
+    border-radius: 12px;
+    min-width: 0;
+}
+
+.workshop-item-icon,
+.workshop-achievement-icon {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: #343b30;
+    color: #d7bd79;
+    font-size: 25px;
+}
+
+.workshop-item-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.workshop-item-info strong {
+    color: #eee9d9;
+    font-size: 15px;
+}
+
+.workshop-item-info span {
+    color: #c6b47f;
+    font-size: 13px;
+}
+
+.workshop-item-info small {
+    color: #92998b;
+    font-size: 12px;
+}
+
+.workshop-button,
+.workshop-recipe-button {
+    border: 1px solid #81734e;
+    background: #393b2d;
+    color: #e9d7a0;
+    border-radius: 9px;
+    padding: 10px 15px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+    font: inherit;
+}
+
+.workshop-button:hover,
+.workshop-recipe-button:hover {
+    background: #514b35;
+    transform: translateY(-1px);
+}
+
+.workshop-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.workshop-button.secondary {
+    border-color: #697568;
+    color: #c5d0c0;
+    background: #303a32;
+}
+
+.workshop-button.premium {
+    background: #55442a;
+    border-color: #bd9652;
+    color: #ffe2a0;
+}
+
+.workshop-processing-card {
+    display: block;
+}
+
+.workshop-processing-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+}
+
+.workshop-processing-heading > div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.workshop-processing-heading strong {
+    color: #eee9d9;
+}
+
+.workshop-processing-heading span {
+    color: #c6b47f;
+    font-size: 13px;
+}
+
+.workshop-processing-heading > strong {
+    color: #d7bd79;
+}
+
+.workshop-processing-card p {
+    color: #a9ad9e;
+    font-size: 13px;
+    margin: 16px 0 10px;
+}
+
+.workshop-recipe-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+}
+
+.workshop-recipe-button {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+}
+
+.workshop-recipe-button small {
+    color: #b8b49e;
+    white-space: nowrap;
+}
+
+.workshop-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 42px 20px;
+    border: 1px dashed #596050;
+    border-radius: 14px;
+    color: #a9ad9e;
+}
+
+.workshop-empty > span {
+    font-size: 38px;
+    color: #c6b47f;
+    margin-bottom: 12px;
+}
+
+.workshop-empty strong {
+    color: #e1dfd2;
+    margin-bottom: 7px;
+}
+
+.workshop-empty p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.workshop-discovered,
+.workshop-achievement-status {
+    color: #a9c79c;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.workshop-achievement-card.unlocked {
+    border-color: #88794e;
+    background: #302f25;
+}
+
+.workshop-achievement-card.unlocked .workshop-achievement-icon {
+    background: #51452b;
+    color: #f2d48c;
+}
+
+.workshop-level-heading,
+.workshop-level-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.workshop-level-heading span {
+    color: #b9bcae;
+}
+
+.workshop-level-heading strong {
+    color: #e5ce8d;
+    font-size: 24px;
+}
+
+.workshop-exp-track {
+    height: 12px;
+    background: #121612;
+    border-radius: 20px;
+    overflow: hidden;
+    margin: 17px 0 10px;
+}
+
+.workshop-exp-fill {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, #879b67, #d5bd77);
+    border-radius: inherit;
+    transition: width 0.35s ease;
+}
+
+.workshop-level-footer {
+    color: #a9ad9e;
+    font-size: 12px;
+}
+
+.workshop-level-footer strong {
+    color: #d7bd79;
+}
+
+.workshop-cat-panel {
+    text-align: center;
+    max-width: 560px;
+    margin: 0 auto 24px;
+    padding: 28px 20px;
+}
+
+.workshop-cat-panel h3 {
+    color: #e9dfc4;
+    margin: 18px 0 6px;
+}
+
+.workshop-cat-panel > p {
+    color: #aaaFA1;
+    line-height: 1.7;
+}
+
+.workshop-cat-art {
+    min-height: 180px;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(ellipse, #414638 0%, #252a23 65%, #20251f 100%);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.pixel-cat {
+    position: relative;
+    width: 100px;
+    height: 85px;
+    background: #171a17;
+    border: 5px solid #0d100e;
+    border-radius: 35% 35% 30% 30%;
+    image-rendering: pixelated;
+    box-shadow: 0 8px 0 #0b0e0c;
+}
+
+.cat-ear {
+    position: absolute;
+    top: -22px;
+    width: 30px;
+    height: 34px;
+    background: #171a17;
+    border: 5px solid #0d100e;
+    transform: rotate(45deg);
+    z-index: -1;
+}
+
+.cat-ear.left {
+    left: 1px;
+}
+
+.cat-ear.right {
+    right: 1px;
+    transform: rotate(-45deg);
+}
+
+.cat-eye {
+    position: absolute;
+    top: 32px;
+    width: 9px;
+    height: 12px;
+    background: #d4c48b;
+    border-radius: 2px;
+}
+
+.cat-eye.left {
+    left: 23px;
+}
+
+.cat-eye.right {
+    right: 23px;
+}
+
+.cat-nose {
+    position: absolute;
+    top: 49px;
+    left: 42px;
+    width: 9px;
+    height: 6px;
+    background: #b98282;
+    border-radius: 50%;
+}
+
+.workshop-cat-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 9px;
+    margin: 22px 0;
+}
+
+.workshop-cat-stats > div {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 13px 6px;
+    background: #171c17;
+    border-radius: 10px;
+}
+
+.workshop-cat-stats span {
+    color: #9fa596;
+    font-size: 12px;
+}
+
+.workshop-cat-stats strong {
+    color: #e3cd8e;
+    font-size: 20px;
+}
+
+.workshop-cat-actions {
+    display: grid;
+    gap: 10px;
+}
+
+.workshop-cat-note {
+    font-size: 12px;
+    color: #a6aa9d;
+    margin-top: 17px;
+}
+
+.workshop-section-heading {
+    margin: 24px 0 13px;
+}
+
+.workshop-section-heading h3 {
+    color: #e6e1d1;
+}
+
+.workshop-message {
+    position: fixed;
+    z-index: 100;
+    left: 50%;
+    bottom: 90px;
+    transform: translateX(-50%);
+    width: min(90%, 440px);
+    padding: 14px 18px;
+    border-radius: 10px;
+    background: #29372b;
+    border: 1px solid #66836a;
+    color: #d9ead7;
+    text-align: center;
+    box-shadow: 0 8px 30px #0008;
+}
+
+.workshop-message.error {
+    background: #3d2927;
+    border-color: #9b625b;
+    color: #f0d0ca;
+}
+
+@media (max-width: 600px) {
+    .workshop-item-card {
+        flex-wrap: wrap;
+    }
+
+    .workshop-item-info {
+        flex-basis: calc(100% - 70px);
+    }
+
+    .workshop-item-card > .workshop-button {
+        width: 100%;
+    }
+
+    .workshop-recipe-list {
+        grid-template-columns: 1fr;
+    }
+
+    .workshop-cat-stats {
+        gap: 5px;
+    }
+
+    .workshop-cat-stats span {
+        font-size: 10px;
+    }
+
+    .workshop-cat-stats strong {
+        font-size: 17px;
+    }
+
+    .workshop-level-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
