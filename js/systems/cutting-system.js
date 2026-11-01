@@ -1,280 +1,559 @@
-import { inventorySystem } from "../systems/inventory.js";
-import { inventoryUI } from "./inventory-ui.js";
-import { cuttingUI } from "./cutting-ui.js";
-import { navigation } from "./navigation.js";
-import { eventBus } from "../core/event-bus.js";
+// js/systems/cutting-system.js
+
+import { geometryEngine } from "./geometry-engine.js";
+import { meshGeometryUtils } from "./mesh-geometry-utils.js";
 
 
-class CuttingInventoryBridge {
+class CuttingSystem {
     constructor() {
-        this.initialized = false;
-        this.originalMethods = {};
-        this.inventoryChangedHandler = null;
+        this.lastResult = null;
+
+        this.config = {
+            bladeThickness: 0.025,
+            minimumVolume: 1e-10,
+            volumeTolerance: 1e-6,
+            geometryTolerance: 1e-8
+        };
     }
 
-    init() {
-        if (this.initialized) return;
 
-        this.initialized = true;
+    // ==========================================
+    // 刀片厚度
+    // ==========================================
 
-        this.patchStoneSelector();
-        this.patchWorkbenchReset();
-        this.patchInventoryDetail();
+    setBladeThickness(value) {
+        const thickness = Number(value);
 
-        this.inventoryChangedHandler = () => {
-            cuttingUI.refreshStoneSelector();
-        };
+        if (
+            !Number.isFinite(thickness) ||
+            thickness < 0
+        ) {
+            throw new Error("刀片厚度必須是大於或等於零的有效數值。");
+        }
 
-        eventBus.on(
-            "inventory:changed",
-            this.inventoryChangedHandler
+        this.config.bladeThickness = thickness;
+
+        return this.config.bladeThickness;
+    }
+
+
+    getBladeThickness() {
+        return this.config.bladeThickness;
+    }
+
+
+    // ==========================================
+    // 模型驗證
+    // ==========================================
+
+    validateMesh(mesh) {
+        if (
+            !mesh ||
+            !Array.isArray(mesh.vertices) ||
+            !Array.isArray(mesh.faces)
+        ) {
+            throw new Error("缺少有效的模型頂點或面資料。");
+        }
+
+        if (
+            mesh.vertices.length < 4 ||
+            mesh.faces.length < 4
+        ) {
+            throw new Error("模型頂點數量或面數量不足。");
+        }
+
+        try {
+            geometryEngine.validateMesh(mesh);
+        } catch (error) {
+            throw new Error(
+                `模型幾何資料驗證失敗：${error.message}`
+            );
+        }
+
+        return true;
+    }
+
+
+    // ==========================================
+    // 向量工具
+    // ==========================================
+
+    dot(a, b) {
+        return (
+            a[0] * b[0] +
+            a[1] * b[1] +
+            a[2] * b[2]
+        );
+    }
+
+
+    subtract(a, b) {
+        return [
+            a[0] - b[0],
+            a[1] - b[1],
+            a[2] - b[2]
+        ];
+    }
+
+
+    normalize(vector) {
+        const length = Math.sqrt(
+            this.dot(vector, vector)
         );
 
-        cuttingUI.refreshStoneSelector();
+        if (
+            !Number.isFinite(length) ||
+            length < 1e-10
+        ) {
+            throw new Error("切割平面法線無效，無法正規化。");
+        }
 
-        console.log("背包與切割工作台連接完成");
+        return vector.map(value => value / length);
     }
 
 
     // ==========================================
-    // 工作台素材選單
+    // 切割平面驗證
     // ==========================================
 
-    patchStoneSelector() {
-        if (this.originalMethods.refreshStoneSelector) {
-            return;
+    normalizePlane(plane) {
+        if (
+            !plane ||
+            !Array.isArray(plane.point) ||
+            !Array.isArray(plane.normal) ||
+            plane.point.length !== 3 ||
+            plane.normal.length !== 3 ||
+            !plane.point.every(Number.isFinite) ||
+            !plane.normal.every(Number.isFinite)
+        ) {
+            throw new Error("切割平面資料格式錯誤。");
         }
 
-        this.originalMethods.refreshStoneSelector =
-            cuttingUI.refreshStoneSelector.bind(cuttingUI);
-
-        cuttingUI.refreshStoneSelector = () => {
-            const select = cuttingUI.elements.stoneSelect;
-
-            if (!select) return;
-
-            const previousId = cuttingUI.currentStoneId;
-            const stones = inventorySystem.getCuttable();
-
-            select.replaceChildren();
-
-            const placeholder =
-                document.createElement("option");
-
-            placeholder.value = "";
-            placeholder.textContent = "請選擇背包中的原石";
-
-            select.appendChild(placeholder);
-
-            for (const stone of stones) {
-                const option =
-                    document.createElement("option");
-
-                option.value = stone.id;
-
-                const rarity =
-                    stone.rarityName ??
-                    stone.rarity ??
-                    "未知稀有度";
-
-                const name =
-                    stone.name ??
-                    "未命名原石";
-
-                const pieceLabel =
-                    stone.status === "cut"
-                        ? "（切割產物）"
-                        : "（未切割）";
-
-                option.textContent =
-                    `${rarity}｜${name}${pieceLabel}`;
-
-                select.appendChild(option);
-            }
-
-            if (
-                previousId &&
-                stones.some(stone => stone.id === previousId)
-            ) {
-                select.value = previousId;
-            } else {
-                select.value = "";
-            }
-
-            cuttingUI.updateStoneInfo(
-                stones.length > 0
-                    ? `目前有 ${stones.length} 件可以切割的素材。`
-                    : "目前沒有可以切割的背包素材。"
-            );
+        return {
+            point: [...plane.point],
+            normal: this.normalize(plane.normal)
         };
     }
 
 
     // ==========================================
-    // 工作台重設
+    // 頂點與切割平面的距離
     // ==========================================
 
-    patchWorkbenchReset() {
-        if (this.originalMethods.resetWorkbench) {
-            return;
-        }
-
-        this.originalMethods.resetWorkbench =
-            cuttingUI.resetWorkbench.bind(cuttingUI);
-
-        cuttingUI.resetWorkbench = () => {
-            this.originalMethods.resetWorkbench();
-
-            // 原本 resetWorkbench 會優先載入未切割原石。
-            // 若沒有未切割原石，才嘗試載入可繼續切割的產物。
-            if (!cuttingUI.isTestMode) {
-                return;
-            }
-
-            const stones = inventorySystem.getCuttable();
-
-            const nextStone = stones.find(
-                stone => stone.status === "cut"
+    getVertexDistances(mesh, plane) {
+        return mesh.vertices.map(vertex => {
+            const relative = this.subtract(
+                vertex,
+                plane.point
             );
 
-            if (!nextStone) {
-                return;
-            }
-
-            const loaded = cuttingUI.selectInventoryStone(
-                nextStone.id
+            return this.dot(
+                relative,
+                plane.normal
             );
-
-            if (!loaded) {
-                return;
-            }
-
-            cuttingUI.updateStoneInfo(
-                `目前選擇：${nextStone.name ?? "未命名素材"}｜切割產物`
-            );
-
-            cuttingUI.showMessage(
-                "工作台已載入背包中的切割產物，可以繼續切割。"
-            );
-        };
+        });
     }
 
 
     // ==========================================
-    // 背包詳細資料按鈕
+    // 確認切割平面確實穿過原石
     // ==========================================
 
-    patchInventoryDetail() {
-        if (this.originalMethods.showDetail) {
-            return;
-        }
-
-        this.originalMethods.showDetail =
-            inventoryUI.showDetail.bind(inventoryUI);
-
-        inventoryUI.showDetail = stoneId => {
-            this.originalMethods.showDetail(stoneId);
-
-            this.renderWorkbenchButton(stoneId);
-        };
-    }
-
-
-    // ==========================================
-    // 送往切割工作台按鈕
-    // ==========================================
-
-    renderWorkbenchButton(stoneId) {
-        const panel =
-            document.getElementById("inventory-detail");
-
-        if (!panel) return;
-
-        const stone = inventorySystem.getById(stoneId);
-
-        if (!stone) return;
-
-        let button = document.getElementById(
-            "send-stone-to-cutting"
+    validateCutPosition(mesh, plane, bladeThickness) {
+        const distances = this.getVertexDistances(
+            mesh,
+            plane
         );
 
-        if (!button) {
-            button = document.createElement("button");
+        const halfThickness = bladeThickness / 2;
 
-            button.id = "send-stone-to-cutting";
-            button.type = "button";
+        const positiveThreshold =
+            halfThickness + this.config.geometryTolerance;
 
-            button.style.cssText = `
-                display: block;
-                width: 100%;
-                margin-top: 14px;
-                padding: 12px 16px;
-                border: 1px solid rgba(198,164,92,0.5);
-                border-radius: 8px;
-                background: #34392d;
-                color: #e8d7a7;
-                font: inherit;
-                font-weight: 600;
-                cursor: pointer;
-            `;
+        const negativeThreshold =
+            -halfThickness - this.config.geometryTolerance;
 
-            const previewSection = panel.querySelector(
-                "#inventory-stone-preview-section"
+        const maximumDistance = Math.max(...distances);
+        const minimumDistance = Math.min(...distances);
+
+        if (maximumDistance <= positiveThreshold) {
+            throw new Error(
+                "切割位置不正確：原石沒有足夠的正側空間。"
             );
-
-            if (previewSection) {
-                previewSection.after(button);
-            } else {
-                panel.appendChild(button);
-            }
         }
 
-        const canCut = inventorySystem.isCuttable(stone);
+        if (minimumDistance >= negativeThreshold) {
+            throw new Error(
+                "切割位置不正確：原石沒有足夠的負側空間。"
+            );
+        }
 
-        button.disabled = !canCut;
-
-        button.textContent = canCut
-            ? "送往切割工作台"
-            : stone.consumedByCut
-                ? "此素材已完成再次切割"
-                : "目前無法切割此素材";
-
-        button.style.opacity = canCut ? "1" : "0.55";
-        button.style.cursor = canCut ? "pointer" : "not-allowed";
-
-        button.onclick = () => {
-            if (!inventorySystem.isCuttable(stone)) {
-                cuttingUI.showMessage(
-                    "此素材已經被消耗，或缺少有效的幾何資料。",
-                    true
-                );
-
-                return;
-            }
-
-            navigation.navigate("cutting");
-
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    const loaded =
-                        cuttingUI.selectInventoryStone(stoneId);
-
-                    if (loaded) {
-                        cuttingUI.showMessage(
-                            `已從背包載入「${stone.name ?? "原石"}」，可以開始切割。`
-                        );
-                    } else {
-                        cuttingUI.showMessage(
-                            "素材載入失敗，請確認素材資料是否有效。",
-                            true
-                        );
-                    }
-                });
-            });
+        return {
+            minimumDistance,
+            maximumDistance,
+            halfThickness
         };
+    }
+
+
+    // ==========================================
+    // 體積計算
+    // ==========================================
+
+    calculateVolume(mesh) {
+        this.validateMesh(mesh);
+
+        const volume = meshGeometryUtils.getVolume(mesh);
+
+        if (
+            !Number.isFinite(volume) ||
+            volume <= this.config.minimumVolume
+        ) {
+            throw new Error(
+                "模型體積無效或接近零，無法繼續切割。"
+            );
+        }
+
+        return volume;
+    }
+
+
+    // ==========================================
+    // 建立正側切割平面
+    // ==========================================
+
+    createPositivePlane(plane, halfThickness) {
+        return {
+            point: [
+                plane.point[0] +
+                    plane.normal[0] * halfThickness,
+
+                plane.point[1] +
+                    plane.normal[1] * halfThickness,
+
+                plane.point[2] +
+                    plane.normal[2] * halfThickness
+            ],
+
+            normal: [...plane.normal]
+        };
+    }
+
+
+    // ==========================================
+    // 建立負側切割平面
+    // ==========================================
+
+    createNegativePlane(plane, halfThickness) {
+        return {
+            point: [
+                plane.point[0] -
+                    plane.normal[0] * halfThickness,
+
+                plane.point[1] -
+                    plane.normal[1] * halfThickness,
+
+                plane.point[2] -
+                    plane.normal[2] * halfThickness
+            ],
+
+            normal: [
+                -plane.normal[0],
+                -plane.normal[1],
+                -plane.normal[2]
+            ]
+        };
+    }
+
+
+    // ==========================================
+    // 單側切割
+    // ==========================================
+
+    createPiece(mesh, plane, sideName) {
+        let result;
+
+        try {
+            result = geometryEngine.clipMesh(
+                mesh,
+                plane
+            );
+        } catch (error) {
+            throw new Error(
+                `${sideName}切割失敗：${error.message}`
+            );
+        }
+
+        if (
+            !result ||
+            !Array.isArray(result.vertices) ||
+            !Array.isArray(result.faces)
+        ) {
+            throw new Error(
+                `${sideName}沒有產生有效的切割模型。`
+            );
+        }
+
+        this.validateMesh(result);
+
+        return {
+            vertices: result.vertices.map(vertex => [
+                vertex[0],
+                vertex[1],
+                vertex[2]
+            ]),
+
+            faces: result.faces.map(face => [
+                face[0],
+                face[1],
+                face[2]
+            ])
+        };
+    }
+
+
+    // ==========================================
+    // 切割結果體積檢查
+    // ==========================================
+
+    validateVolumes(
+        originalVolume,
+        positiveVolume,
+        negativeVolume
+    ) {
+        const tolerance = Math.max(
+            this.config.volumeTolerance,
+            originalVolume * this.config.volumeTolerance
+        );
+
+        if (
+            positiveVolume <= this.config.minimumVolume
+        ) {
+            throw new Error(
+                "正側切割結果體積過小，無法建立有效模型。"
+            );
+        }
+
+        if (
+            negativeVolume <= this.config.minimumVolume
+        ) {
+            throw new Error(
+                "負側切割結果體積過小，無法建立有效模型。"
+            );
+        }
+
+        const combinedVolume =
+            positiveVolume + negativeVolume;
+
+        if (
+            combinedVolume >
+            originalVolume + tolerance
+        ) {
+            throw new Error(
+                "切割結果體積超過原石體積，幾何資料可能存在重疊或錯誤。"
+            );
+        }
+
+        return true;
+    }
+
+
+    // ==========================================
+    // 完整雙側切割
+    // ==========================================
+
+    cutStone(mesh, plane) {
+        // ------------------------------
+        // 1. 驗證原始模型
+        // ------------------------------
+
+        this.validateMesh(mesh);
+
+
+        // ------------------------------
+        // 2. 正規化切割平面
+        // ------------------------------
+
+        const normalizedPlane = this.normalizePlane(
+            plane
+        );
+
+
+        // ------------------------------
+        // 3. 取得刀片厚度
+        // ------------------------------
+
+        const bladeThickness =
+            this.config.bladeThickness;
+
+        const halfThickness =
+            bladeThickness / 2;
+
+
+        // ------------------------------
+        // 4. 計算原始體積
+        // ------------------------------
+
+        const originalVolume = this.calculateVolume(
+            mesh
+        );
+
+
+        // ------------------------------
+        // 5. 確認切割位置有效
+        // ------------------------------
+
+        this.validateCutPosition(
+            mesh,
+            normalizedPlane,
+            bladeThickness
+        );
+
+
+        // ------------------------------
+        // 6. 建立正負兩側切割平面
+        // ------------------------------
+
+        const positivePlane = this.createPositivePlane(
+            normalizedPlane,
+            halfThickness
+        );
+
+        const negativePlane = this.createNegativePlane(
+            normalizedPlane,
+            halfThickness
+        );
+
+
+        // ------------------------------
+        // 7. 分別切割兩側模型
+        // ------------------------------
+
+        const positivePiece = this.createPiece(
+            mesh,
+            positivePlane,
+            "正側"
+        );
+
+        const negativePiece = this.createPiece(
+            mesh,
+            negativePlane,
+            "負側"
+        );
+
+
+        // ------------------------------
+        // 8. 計算兩側體積
+        // ------------------------------
+
+        const positiveVolume = this.calculateVolume(
+            positivePiece
+        );
+
+        const negativeVolume = this.calculateVolume(
+            negativePiece
+        );
+
+
+        // ------------------------------
+        // 9. 檢查體積合理性
+        // ------------------------------
+
+        this.validateVolumes(
+            originalVolume,
+            positiveVolume,
+            negativeVolume
+        );
+
+
+        // ------------------------------
+        // 10. 計算刀片移除體積
+        // ------------------------------
+
+        const rawRemovedVolume =
+            originalVolume -
+            positiveVolume -
+            negativeVolume;
+
+        const tolerance = Math.max(
+            this.config.volumeTolerance,
+            originalVolume * this.config.volumeTolerance
+        );
+
+        if (rawRemovedVolume < -tolerance) {
+            throw new Error(
+                "切割後的體積總和大於原石體積，無法確認切割結果。"
+            );
+        }
+
+        const removedVolume = Math.max(
+            0,
+            rawRemovedVolume
+        );
+
+
+        // ------------------------------
+        // 11. 組合結果
+        // ------------------------------
+
+        const result = {
+            positivePiece,
+            negativePiece,
+
+            originalVolume,
+            positiveVolume,
+            negativeVolume,
+            removedVolume,
+
+            cutPlane: {
+                point: [...normalizedPlane.point],
+                normal: [...normalizedPlane.normal]
+            },
+
+            bladeThickness,
+
+            createdAt: Date.now()
+        };
+
+
+        // ------------------------------
+        // 12. 保存最近一次結果
+        // ------------------------------
+
+        this.lastResult = result;
+
+        return result;
+    }
+
+
+    // ==========================================
+    // 取得最近一次切割結果
+    // ==========================================
+
+    getLastResult() {
+        return this.lastResult;
+    }
+
+
+    // ==========================================
+    // 清除切割結果
+    // ==========================================
+
+    clearResult() {
+        this.lastResult = null;
+    }
+
+
+    // ==========================================
+    // 重設系統
+    // ==========================================
+
+    reset() {
+        this.lastResult = null;
+
+        this.config.bladeThickness = 0.025;
     }
 }
 
 
-export const cuttingInventoryBridge =
-    new CuttingInventoryBridge();
+export const cuttingSystem = new CuttingSystem();
