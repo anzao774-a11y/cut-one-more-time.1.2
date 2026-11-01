@@ -1,4 +1,3 @@
-
 import { saveManager } from "./core/save-manager.js";
 import { eventBus } from "./core/event-bus.js";
 
@@ -8,6 +7,7 @@ import { settingsUI } from "./ui/settings-ui.js";
 import { inventoryUI } from "./ui/inventory-ui.js";
 import { cuttingUI } from "./ui/cutting-ui.js";
 import { cuttingInventoryBridge } from "./ui/cutting-inventory-bridge.js";
+import { workshopUI } from "./ui/workshop-ui.js";
 
 import { audioSystem } from "./systems/audio-system.js";
 import { workshopProgression } from "./systems/workshop-progression.js";
@@ -56,6 +56,9 @@ function initializeGame() {
     };
 
     saveData.inventory ??= [];
+    saveData.products ??= [];
+    saveData.dex ??= [];
+    saveData.achievements ??= [];
 
     saveData.statistics ??= {
         totalPulls: 0,
@@ -93,8 +96,10 @@ function initializeGame() {
 
     cuttingInventoryBridge.init();
 
+    workshopUI.init();
+
     console.log(
-        "再切一刀就好：核心系統初始化完成"
+        "再切一刀就好：核心系統與工坊系統初始化完成"
     );
 }
 
