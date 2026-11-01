@@ -195,7 +195,12 @@ class CuttingUI {
     // ==========================================
 
     isCuttableStone(stone) {
-        if (!stone || !stone.id || !stone.geometry) {
+        if (
+            !stone ||
+            !stone.id ||
+            !stone.geometry ||
+            stone.consumedByCut === true
+        ) {
             return false;
         }
 
@@ -205,7 +210,21 @@ class CuttingUI {
             Array.isArray(geometry.vertices) &&
             Array.isArray(geometry.faces) &&
             geometry.vertices.length >= 4 &&
-            geometry.faces.length >= 4;
+            geometry.faces.length >= 4 &&
+            geometry.vertices.every(vertex =>
+                Array.isArray(vertex) &&
+                vertex.length === 3 &&
+                vertex.every(Number.isFinite)
+            ) &&
+            geometry.faces.every(face =>
+                Array.isArray(face) &&
+                face.length === 3 &&
+                face.every(index =>
+                    Number.isInteger(index) &&
+                    index >= 0 &&
+                    index < geometry.vertices.length
+                )
+            );
 
         if (!hasValidGeometry) {
             return false;
@@ -240,7 +259,7 @@ class CuttingUI {
         const stones = inventorySystem.getCuttable()
             .filter(stone => this.isCuttableStone(stone));
 
-        select.innerHTML = "";
+        select.replaceChildren();
 
         const placeholder = document.createElement("option");
 
@@ -572,7 +591,11 @@ class CuttingUI {
             for (const index of face) {
                 const vertex = meshData.vertices[index];
 
-                if (!vertex || vertex.length !== 3) {
+                if (
+                    !vertex ||
+                    vertex.length !== 3 ||
+                    !vertex.every(Number.isFinite)
+                ) {
                     throw new Error("原石頂點資料無效");
                 }
 
@@ -1073,10 +1096,13 @@ class CuttingUI {
             value => value / normalLength
         );
 
-        const bladeThickness = Math.max(
-            0,
-            Number(cutResult.bladeThickness) || 0
-        );
+        const rawBladeThickness =
+            Number(cutResult.bladeThickness);
+
+        const bladeThickness =
+            Number.isFinite(rawBladeThickness)
+                ? Math.max(0, rawBladeThickness)
+                : 0;
 
         const halfThickness = bladeThickness / 2;
 
@@ -1193,7 +1219,10 @@ class CuttingUI {
 
             const volume = getVolume(geometry);
 
-            if (volume <= 1e-10) {
+            if (
+                volume <= 1e-10 ||
+                originalVolume <= 1e-10
+            ) {
                 console.warn(
                     `${side} 側玉石體積無效：`,
                     mass.name
@@ -1295,18 +1324,23 @@ class CuttingUI {
             // 計算玉石頂點與切割面的距離
             // ==================================
 
-            const distances = jadeGeometry.vertices.map(
-                vertex => {
-                    return (
-                        (vertex[0] - point[0]) * unitNormal[0] +
-                        (vertex[1] - point[1]) * unitNormal[1] +
-                        (vertex[2] - point[2]) * unitNormal[2]
-                    );
-                }
-            );
+            let minDistance = Infinity;
+            let maxDistance = -Infinity;
 
-            const minDistance = Math.min(...distances);
-            const maxDistance = Math.max(...distances);
+            for (const vertex of jadeGeometry.vertices) {
+                const distance =
+                    (vertex[0] - point[0]) * unitNormal[0] +
+                    (vertex[1] - point[1]) * unitNormal[1] +
+                    (vertex[2] - point[2]) * unitNormal[2];
+
+                if (distance < minDistance) {
+                    minDistance = distance;
+                }
+
+                if (distance > maxDistance) {
+                    maxDistance = distance;
+                }
+            }
 
 
             // ==================================
@@ -1607,9 +1641,15 @@ class CuttingUI {
                 ? [...originalStone.cutResultIds]
                 : null;
 
+        const originalConsumedState =
+            originalStone.consumedByCut;
+
         const originalInventory = [
             ...saveData.inventory
         ];
+
+        const originalTotalCuts =
+            saveData.statistics?.totalCuts ?? 0;
 
         jadeSplit ??= this.splitJadeData(
             originalStone,
@@ -1636,6 +1676,18 @@ class CuttingUI {
         // 將來源素材標記為已切割。
         originalStone.status = "cut";
         originalStone.cutAt = Date.now();
+
+        // 如果來源本身就是切割產物，
+        // 則標記為已消耗，避免被重複切割。
+        const isCutPiece =
+            Boolean(
+                originalStone.sourceStoneId &&
+                originalStone.cutSide
+            );
+
+        if (isCutPiece) {
+            originalStone.consumedByCut = true;
+        }
 
         // 保留先前切割紀錄，並加入本次新產物。
         const previousIds = Array.isArray(
@@ -1668,9 +1720,6 @@ class CuttingUI {
             };
         }
 
-        const originalTotalCuts =
-            saveData.statistics.totalCuts ?? 0;
-
         saveData.statistics.totalCuts =
             originalTotalCuts + 1;
 
@@ -1694,6 +1743,13 @@ class CuttingUI {
             } else {
                 originalStone.cutResultIds =
                     originalCutResultIds;
+            }
+
+            if (originalConsumedState === undefined) {
+                delete originalStone.consumedByCut;
+            } else {
+                originalStone.consumedByCut =
+                    originalConsumedState;
             }
 
             saveData.statistics.totalCuts =
@@ -1750,7 +1806,7 @@ class CuttingUI {
 
             if (!this.isCuttableStone(latestStone)) {
                 this.showMessage(
-                    "來源素材已不存在或不符合切割條件，請重新選擇。",
+                    "來源素材已不存在、已消耗或不符合切割條件，請重新選擇。",
                     true
                 );
 
