@@ -1,4 +1,3 @@
-
 import { inventorySystem } from "../systems/inventory.js";
 import { inventoryUI } from "./inventory-ui.js";
 import { cuttingUI } from "./cutting-ui.js";
@@ -125,6 +124,18 @@ class CuttingInventoryBridge {
                     .selectInventoryStone(stoneId);
             }
 
+            // 已消耗的切割產物不可再次選取。
+            if (!inventorySystem.isCuttable(stone)) {
+                cuttingUI.showMessage(
+                    "此切割產物已經使用或不符合再次切割條件。",
+                    true
+                );
+
+                cuttingUI.refreshStoneSelector();
+
+                return false;
+            }
+
             const originalStatus = stone.status;
 
             try {
@@ -151,8 +162,6 @@ class CuttingInventoryBridge {
             cuttingUI.saveCutPieces.bind(cuttingUI);
 
         cuttingUI.saveCutPieces = (...args) => {
-            const result = args[0];
-
             const sourceStone =
                 inventorySystem.getById(
                     cuttingUI.currentStoneId
@@ -162,9 +171,55 @@ class CuttingInventoryBridge {
                 ...(sourceStone?.cutResultIds ?? [])
             ];
 
+            /*
+             * 切割產物在 performCut 中會暫時改成 uncut，
+             * 因此不能只依照 status 判斷它是否為切割產物。
+             *
+             * sourceStoneId 與 cutSide 是切割產物的來源標記。
+             */
+            const isPreviouslyCutPiece = Boolean(
+                sourceStone?.sourceStoneId &&
+                sourceStone?.cutSide
+            );
+
+            const previousConsumedState =
+                sourceStone?.consumedByCut;
+
             // 保留原本的所有參數，包含預先計算的 jadeSplit。
             const records =
                 this.originalMethods.saveCutPieces(...args);
+
+            /*
+             * 原始存檔成功後才標記來源產物已消耗。
+             * saveCutPieces 成功時會回傳正側與負側紀錄。
+             */
+            const saveSucceeded =
+                Array.isArray(records) &&
+                records.length === 2;
+
+            if (
+                sourceStone &&
+                saveSucceeded &&
+                isPreviouslyCutPiece
+            ) {
+                sourceStone.consumedByCut = true;
+
+                const saved = saveManager.save();
+
+                if (!saved) {
+                    // 第二次保存失敗時，恢復記憶體中的消耗標記。
+                    if (previousConsumedState === undefined) {
+                        delete sourceStone.consumedByCut;
+                    } else {
+                        sourceStone.consumedByCut =
+                            previousConsumedState;
+                    }
+
+                    console.error(
+                        "切割產物消耗狀態保存失敗。"
+                    );
+                }
+            }
 
             if (sourceStone && previousIds.length > 0) {
                 const currentIds =
@@ -199,8 +254,24 @@ class CuttingInventoryBridge {
                 cuttingUI.currentStoneId
             );
 
-            if (!stone || stone.status !== "cut") {
+            if (!stone) {
                 return this.originalMethods.performCut();
+            }
+
+            if (stone.status !== "cut") {
+                return this.originalMethods.performCut();
+            }
+
+            // 再次切割前，重新確認產物仍可使用。
+            if (!inventorySystem.isCuttable(stone)) {
+                cuttingUI.showMessage(
+                    "此切割產物已經使用或不符合再次切割條件，請重新選擇。",
+                    true
+                );
+
+                cuttingUI.refreshStoneSelector();
+
+                return;
             }
 
             const originalStatus = stone.status;
@@ -341,7 +412,40 @@ class CuttingInventoryBridge {
             }
         }
 
+        const canCut =
+            inventorySystem.isCuttable(stone);
+
+        button.disabled = !canCut;
+
+        button.style.opacity =
+            canCut ? "1" : "0.45";
+
+        button.style.cursor =
+            canCut ? "pointer" : "not-allowed";
+
+        button.textContent = canCut
+            ? "送往切割工作台"
+            : "目前無法再次切割";
+
         button.onclick = () => {
+            // 點擊當下再次確認，避免使用過期的按鈕狀態。
+            const latestStone =
+                inventorySystem.getById(stoneId);
+
+            if (
+                !latestStone ||
+                !inventorySystem.isCuttable(latestStone)
+            ) {
+                cuttingUI.showMessage(
+                    "此素材已經無法再次切割，請重新選擇。",
+                    true
+                );
+
+                this.renderWorkbenchButton(stoneId);
+
+                return;
+            }
+
             navigation.navigate("cutting");
 
             requestAnimationFrame(() => {
@@ -351,7 +455,7 @@ class CuttingInventoryBridge {
 
                     if (loaded) {
                         cuttingUI.showMessage(
-                            `已從背包載入「${stone.name ?? "原石"}」，可以開始切割。`
+                            `已從背包載入「${latestStone.name ?? "原石"}」，可以開始切割。`
                         );
                     }
                 });
