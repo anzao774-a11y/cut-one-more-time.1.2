@@ -1,4 +1,3 @@
-
 import * as THREE from "three";
 import { meshGeometryUtils } from "./mesh-geometry-utils.js";
 import { meshThreeAdapter } from "./mesh-three-adapter.js";
@@ -25,7 +24,12 @@ class MeshPreviewManager {
     /**
      * 建立一組預覽模型
      */
-    createPreview(id, stoneMesh, includedMeshes = [], options = {}) {
+    createPreview(
+        id,
+        stoneMesh,
+        includedMeshes = [],
+        options = {}
+    ) {
         if (!id) {
             throw new Error("預覽模型必須具有識別碼");
         }
@@ -40,7 +44,14 @@ class MeshPreviewManager {
 
         const bounds = meshGeometryUtils.getBounds(stoneMesh);
 
-        if (!bounds?.center) {
+        if (
+            !bounds?.center ||
+            ![
+                bounds.center.x,
+                bounds.center.y,
+                bounds.center.z
+            ].every(Number.isFinite)
+        ) {
             throw new Error("無法取得原石中心位置");
         }
 
@@ -63,21 +74,25 @@ class MeshPreviewManager {
             root,
             stoneGroup,
             includedGroup,
+
             center: new THREE.Vector3(
                 center.x,
                 center.y,
                 center.z
             ),
+
             stoneObject: null,
             includedObjects: [],
             options: { ...options }
         };
 
         try {
-            const stoneObject = meshThreeAdapter.createStoneMesh(
-                stoneMesh,
-                options.stoneOptions || {}
-            );
+            // 建立原石
+            const stoneObject =
+                meshThreeAdapter.createStoneMesh(
+                    stoneMesh,
+                    options.stoneOptions || {}
+                );
 
             if (!stoneObject?.isObject3D) {
                 throw new Error("原石模型建立失敗");
@@ -86,52 +101,77 @@ class MeshPreviewManager {
             stoneGroup.add(stoneObject);
             preview.stoneObject = stoneObject;
 
-            for (let index = 0; index < includedMeshes.length; index++) {
+            // 建立內部模型
+            for (
+                let index = 0;
+                index < includedMeshes.length;
+                index++
+            ) {
                 const item = includedMeshes[index];
 
-                if (!item || !this.validateMesh(item.geometry)) {
+                if (
+                    !item ||
+                    !this.validateMesh(item.geometry)
+                ) {
                     console.warn(
                         `略過無效的內部模型，索引：${index}`
                     );
+
                     continue;
                 }
 
-                const jadeObject = meshThreeAdapter.createJadeMesh(
-                    item,
-                    options.jadeOptions || {}
-                );
+                const jadeObject =
+                    meshThreeAdapter.createJadeMesh(
+                        item,
+                        options.jadeOptions || {}
+                    );
 
                 if (!jadeObject?.isObject3D) {
                     console.warn(
                         `內部模型建立失敗，索引：${index}`
                     );
+
                     continue;
                 }
+
+                /*
+                 * 先加入群組，再套用位置。
+                 *
+                 * 即使套用設定時出錯，
+                 * 清理程序也能找到並釋放模型資源。
+                 */
+                includedGroup.add(jadeObject);
+
+                jadeObject.name =
+                    item.name || `included-${index}`;
+
+                preview.includedObjects.push(jadeObject);
 
                 this.applyPlacement(
                     jadeObject,
                     item.placement || {}
                 );
-
-                jadeObject.name =
-                    item.name || `included-${index}`;
-
-                includedGroup.add(jadeObject);
-                preview.includedObjects.push(jadeObject);
             }
 
-            // 將原石中心移至世界座標原點。
+            // 將原石中心移至世界座標原點
             root.position.set(
                 -center.x,
                 -center.y,
                 -center.z
             );
 
-            // 新預覽建立成功後才替換舊預覽。
+            root.updateMatrixWorld(true);
+
+            /*
+             * 新預覽完整建立成功後才替換舊預覽。
+             * 如果建立失敗，舊預覽仍然保留。
+             */
             this.disposePreview(id);
+
             this.previews.set(id, preview);
 
             return preview;
+
         } catch (error) {
             this.disposePreviewObject(preview);
             throw error;
@@ -160,20 +200,69 @@ class MeshPreviewManager {
             return false;
         }
 
+        // 驗證頂點
+        for (const vertex of mesh.vertices) {
+            if (
+                !Array.isArray(vertex) ||
+                vertex.length !== 3 ||
+                !vertex.every(Number.isFinite)
+            ) {
+                return false;
+            }
+        }
+
+        // 驗證三角面
+        for (const face of mesh.faces) {
+            if (
+                !Array.isArray(face) ||
+                face.length !== 3
+            ) {
+                return false;
+            }
+
+            if (
+                !face.every(index =>
+                    Number.isInteger(index) &&
+                    index >= 0 &&
+                    index < mesh.vertices.length
+                )
+            ) {
+                return false;
+            }
+
+            // 不允許同一個三角面重複使用同一頂點
+            if (
+                face[0] === face[1] ||
+                face[1] === face[2] ||
+                face[0] === face[2]
+            ) {
+                return false;
+            }
+        }
+
         return true;
     }
 
     /**
      * 套用內部模型位置設定
      *
-     * position：世界座標位置
+     * position：位置
      * rotation：弧度
      * scale：縮放比例
      */
     applyPlacement(object, placement = {}) {
-        const position = placement.position || [0, 0, 0];
-        const rotation = placement.rotation || [0, 0, 0];
-        const scale = placement.scale ?? 1;
+        if (!object?.isObject3D) {
+            throw new Error("無效的內部模型物件");
+        }
+
+        const position =
+            placement.position || [0, 0, 0];
+
+        const rotation =
+            placement.rotation || [0, 0, 0];
+
+        const scale =
+            placement.scale ?? 1;
 
         if (
             !Array.isArray(position) ||
@@ -204,16 +293,21 @@ class MeshPreviewManager {
         );
 
         if (typeof scale === "number") {
-            if (!Number.isFinite(scale) || scale <= 0) {
+            if (
+                !Number.isFinite(scale) ||
+                scale <= 0
+            ) {
                 throw new Error("模型縮放比例無效");
             }
 
             object.scale.setScalar(scale);
+
         } else if (
             Array.isArray(scale) &&
             scale.length === 3 &&
             scale.every(value =>
-                Number.isFinite(value) && value > 0
+                Number.isFinite(value) &&
+                value > 0
             )
         ) {
             object.scale.set(
@@ -221,12 +315,15 @@ class MeshPreviewManager {
                 scale[1],
                 scale[2]
             );
+
         } else {
             throw new Error("模型縮放設定無效");
         }
 
         object.updateMatrix();
         object.updateMatrixWorld(true);
+
+        return true;
     }
 
     getPreview(id) {
@@ -252,7 +349,9 @@ class MeshPreviewManager {
             return false;
         }
 
-        preview.includedGroup.visible = Boolean(visible);
+        preview.includedGroup.visible =
+            Boolean(visible);
+
         return true;
     }
 
@@ -263,7 +362,9 @@ class MeshPreviewManager {
             return false;
         }
 
-        preview.stoneObject.visible = Boolean(visible);
+        preview.stoneObject.visible =
+            Boolean(visible);
+
         return true;
     }
 
@@ -290,13 +391,17 @@ class MeshPreviewManager {
         );
 
         preview.stoneObject.traverse(object => {
-            if (!object.isMesh || !object.material) {
+            if (
+                !object.isMesh ||
+                !object.material
+            ) {
                 return;
             }
 
-            const materials = Array.isArray(object.material)
-                ? object.material
-                : [object.material];
+            const materials =
+                Array.isArray(object.material)
+                    ? object.material
+                    : [object.material];
 
             for (const material of materials) {
                 if (!material) {
@@ -336,6 +441,8 @@ class MeshPreviewManager {
             position[2] - preview.center.z
         );
 
+        preview.root.updateMatrixWorld(true);
+
         return true;
     }
 
@@ -359,6 +466,8 @@ class MeshPreviewManager {
             rotation[1],
             rotation[2]
         );
+
+        preview.root.updateMatrixWorld(true);
 
         return true;
     }
@@ -384,21 +493,18 @@ class MeshPreviewManager {
             rotation[2]
         );
 
+        preview.includedGroup.updateMatrixWorld(true);
+
         return true;
     }
 
     /**
      * 清理預覽物件資源
      *
-     * 幾何與材質由預覽模型建立流程建立，
-     * 因此在預覽結束時釋放。
+     * 幾何與材質由預覽模型建立流程建立。
+     * 貼圖可能被其他材質共用，因此預設不釋放。
      *
-     * 貼圖可能被其他材質共用，
-     * 預設不主動釋放貼圖。
-     *
-     * 若未來確定某張貼圖專屬於預覽，
-     * 可在建立時設定：
-     * texture.userData.previewOwned = true
+     * 只有明確標記 previewOwned 的貼圖才會釋放。
      */
     disposeObjectResources(object) {
         if (!object?.traverse) {
@@ -418,9 +524,10 @@ class MeshPreviewManager {
                 return;
             }
 
-            const materialList = Array.isArray(child.material)
-                ? child.material
-                : [child.material];
+            const materialList =
+                Array.isArray(child.material)
+                    ? child.material
+                    : [child.material];
 
             for (const material of materialList) {
                 if (!material) {
@@ -429,8 +536,10 @@ class MeshPreviewManager {
 
                 materials.add(material);
 
-                // 只收集明確標記為預覽專屬的貼圖。
-                for (const value of Object.values(material)) {
+                // 搜尋材質直接使用的貼圖
+                for (
+                    const value of Object.values(material)
+                ) {
                     if (
                         value?.isTexture &&
                         value.userData?.previewOwned === true
@@ -439,11 +548,13 @@ class MeshPreviewManager {
                     }
                 }
 
-                // 支援 ShaderMaterial uniforms。
+                // 搜尋 ShaderMaterial uniforms
                 if (material.uniforms) {
-                    for (const uniform of Object.values(
-                        material.uniforms
-                    )) {
+                    for (
+                        const uniform of Object.values(
+                            material.uniforms
+                        )
+                    ) {
                         const value = uniform?.value;
 
                         if (
@@ -489,9 +600,7 @@ class MeshPreviewManager {
             return;
         }
 
-        if (preview.root?.parent) {
-            preview.root.parent.remove(preview.root);
-        }
+        preview.root?.removeFromParent();
 
         this.disposeObjectResources(preview.root);
 
@@ -539,4 +648,5 @@ class MeshPreviewManager {
     }
 }
 
-export const meshPreviewManager = new MeshPreviewManager();
+export const meshPreviewManager =
+    new MeshPreviewManager();
