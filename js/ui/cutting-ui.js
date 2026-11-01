@@ -1449,6 +1449,17 @@ class CuttingUI {
         positive.position.x = -1.35;
         negative.position.x = 1.35;
 
+        // 切割結果以半透明外殼呈現，讓內部玉料能被看見。
+        for (const material of [
+            this.materials.positive,
+            this.materials.negative
+        ]) {
+            material.transparent = true;
+            material.opacity = 0.28;
+            material.depthWrite = false;
+            material.needsUpdate = true;
+        }
+
         const positiveMasses = jadeSplit?.positive?.masses ?? [];
         const negativeMasses = jadeSplit?.negative?.masses ?? [];
 
