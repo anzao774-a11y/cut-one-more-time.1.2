@@ -1,459 +1,538 @@
 
-.workshop-stat-panel,
-.workshop-market-event,
-.workshop-level-panel,
-.workshop-cat-panel,
-.workshop-info-note {
-    background: #20251f;
-    border: 1px solid #41483d;
-    border-radius: 14px;
-    padding: 20px;
-    margin-bottom: 22px;
-}
-
-.workshop-stat-panel {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-}
-
-.workshop-stat-panel span,
-.workshop-market-event > span {
-    color: #a9ad9e;
-    font-size: 13px;
-}
-
-.workshop-stat-panel strong {
-    color: #d7bd79;
-    font-size: 22px;
-}
-
-.workshop-market-event h3 {
-    color: #e3d09a;
-    margin: 10px 0 6px;
-}
-
-.workshop-market-event p,
-.workshop-info-note {
-    color: #b9bcae;
-    line-height: 1.7;
-}
-
-.workshop-card-list {
-    display: grid;
-    gap: 12px;
-}
-
-.workshop-item-card,
-.workshop-processing-card,
-.workshop-achievement-card {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    padding: 17px;
-    background: #242922;
-    border: 1px solid #41483d;
-    border-radius: 12px;
-    min-width: 0;
-}
-
-.workshop-item-icon,
-.workshop-achievement-icon {
-    width: 48px;
-    height: 48px;
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    border-radius: 12px;
-    background: #343b30;
-    color: #d7bd79;
-    font-size: 25px;
-}
-
-.workshop-item-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-.workshop-item-info strong {
-    color: #eee9d9;
-    font-size: 15px;
-}
-
-.workshop-item-info span {
-    color: #c6b47f;
-    font-size: 13px;
-}
-
-.workshop-item-info small {
-    color: #92998b;
-    font-size: 12px;
-}
-
-.workshop-button,
-.workshop-recipe-button {
-    border: 1px solid #81734e;
-    background: #393b2d;
-    color: #e9d7a0;
-    border-radius: 9px;
-    padding: 10px 15px;
-    cursor: pointer;
-    transition: background 0.2s, transform 0.2s;
-    font: inherit;
-}
-
-.workshop-button:hover,
-.workshop-recipe-button:hover {
-    background: #514b35;
-    transform: translateY(-1px);
-}
-
-.workshop-button:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.workshop-button.secondary {
-    border-color: #697568;
-    color: #c5d0c0;
-    background: #303a32;
-}
-
-.workshop-button.premium {
-    background: #55442a;
-    border-color: #bd9652;
-    color: #ffe2a0;
-}
-
-.workshop-processing-card {
-    display: block;
-}
-
-.workshop-processing-heading {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-}
-
-.workshop-processing-heading > div {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-.workshop-processing-heading strong {
-    color: #eee9d9;
-}
-
-.workshop-processing-heading span {
-    color: #c6b47f;
-    font-size: 13px;
-}
-
-.workshop-processing-heading > strong {
-    color: #d7bd79;
-}
-
-.workshop-processing-card p {
-    color: #a9ad9e;
-    font-size: 13px;
-    margin: 16px 0 10px;
-}
-
-.workshop-recipe-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 9px;
-}
-
-.workshop-recipe-button {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    text-align: left;
-}
-
-.workshop-recipe-button small {
-    color: #b8b49e;
-    white-space: nowrap;
-}
-
-.workshop-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    padding: 42px 20px;
-    border: 1px dashed #596050;
-    border-radius: 14px;
-    color: #a9ad9e;
-}
-
-.workshop-empty > span {
-    font-size: 38px;
-    color: #c6b47f;
-    margin-bottom: 12px;
-}
-
-.workshop-empty strong {
-    color: #e1dfd2;
-    margin-bottom: 7px;
-}
-
-.workshop-empty p {
-    margin: 0;
-    font-size: 13px;
-    line-height: 1.7;
-}
-
-.workshop-discovered,
-.workshop-achievement-status {
-    color: #a9c79c;
-    font-size: 12px;
-    white-space: nowrap;
-}
-
-.workshop-achievement-card.unlocked {
-    border-color: #88794e;
-    background: #302f25;
-}
-
-.workshop-achievement-card.unlocked .workshop-achievement-icon {
-    background: #51452b;
-    color: #f2d48c;
-}
-
-.workshop-level-heading,
-.workshop-level-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-}
-
-.workshop-level-heading span {
-    color: #b9bcae;
-}
-
-.workshop-level-heading strong {
-    color: #e5ce8d;
-    font-size: 24px;
-}
-
-.workshop-exp-track {
-    height: 12px;
-    background: #121612;
-    border-radius: 20px;
-    overflow: hidden;
-    margin: 17px 0 10px;
-}
-
-.workshop-exp-fill {
-    height: 100%;
-    width: 0;
-    background: linear-gradient(90deg, #879b67, #d5bd77);
-    border-radius: inherit;
-    transition: width 0.35s ease;
-}
-
-.workshop-level-footer {
-    color: #a9ad9e;
-    font-size: 12px;
-}
-
-.workshop-level-footer strong {
-    color: #d7bd79;
-}
-
-.workshop-cat-panel {
-    text-align: center;
-    max-width: 560px;
-    margin: 0 auto 24px;
-    padding: 28px 20px;
-}
-
-.workshop-cat-panel h3 {
-    color: #e9dfc4;
-    margin: 18px 0 6px;
-}
-
-.workshop-cat-panel > p {
-    color: #aaaFA1;
-    line-height: 1.7;
-}
-
-.workshop-cat-art {
-    min-height: 180px;
-    display: grid;
-    place-items: center;
-    background: radial-gradient(ellipse, #414638 0%, #252a23 65%, #20251f 100%);
-    border-radius: 14px;
-    overflow: hidden;
-}
-
-.pixel-cat {
-    position: relative;
-    width: 100px;
-    height: 85px;
-    background: #171a17;
-    border: 5px solid #0d100e;
-    border-radius: 35% 35% 30% 30%;
-    image-rendering: pixelated;
-    box-shadow: 0 8px 0 #0b0e0c;
-}
-
-.cat-ear {
-    position: absolute;
-    top: -22px;
-    width: 30px;
-    height: 34px;
-    background: #171a17;
-    border: 5px solid #0d100e;
-    transform: rotate(45deg);
-    z-index: -1;
-}
-
-.cat-ear.left {
-    left: 1px;
-}
-
-.cat-ear.right {
-    right: 1px;
-    transform: rotate(-45deg);
-}
-
-.cat-eye {
-    position: absolute;
-    top: 32px;
-    width: 9px;
-    height: 12px;
-    background: #d4c48b;
-    border-radius: 2px;
-}
-
-.cat-eye.left {
-    left: 23px;
-}
-
-.cat-eye.right {
-    right: 23px;
-}
-
-.cat-nose {
-    position: absolute;
-    top: 49px;
-    left: 42px;
-    width: 9px;
-    height: 6px;
-    background: #b98282;
-    border-radius: 50%;
-}
-
-.workshop-cat-stats {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 9px;
-    margin: 22px 0;
-}
-
-.workshop-cat-stats > div {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-    padding: 13px 6px;
-    background: #171c17;
-    border-radius: 10px;
-}
-
-.workshop-cat-stats span {
-    color: #9fa596;
-    font-size: 12px;
-}
-
-.workshop-cat-stats strong {
-    color: #e3cd8e;
-    font-size: 20px;
-}
-
-.workshop-cat-actions {
-    display: grid;
-    gap: 10px;
-}
-
-.workshop-cat-note {
-    font-size: 12px;
-    color: #a6aa9d;
-    margin-top: 17px;
-}
+import { saveManager } from "../core/save-manager.js";
+import { eventBus } from "../core/event-bus.js";
+import { workshopProgression } from "../systems/workshop-progression.js";
 
-.workshop-section-heading {
-    margin: 24px 0 13px;
+function getElement(id) {
+    return document.getElementById(id);
 }
 
-.workshop-section-heading h3 {
-    color: #e6e1d1;
+function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[char]);
 }
 
-.workshop-message {
-    position: fixed;
-    z-index: 100;
-    left: 50%;
-    bottom: 90px;
-    transform: translateX(-50%);
-    width: min(90%, 440px);
-    padding: 14px 18px;
-    border-radius: 10px;
-    background: #29372b;
-    border: 1px solid #66836a;
-    color: #d9ead7;
-    text-align: center;
-    box-shadow: 0 8px 30px #0008;
+function formatGold(value) {
+    return `${Math.max(0, Number(value) || 0).toLocaleString("en-US")} G`;
 }
 
-.workshop-message.error {
-    background: #3d2927;
-    border-color: #9b625b;
-    color: #f0d0ca;
+function rarityName(rarity) {
+    return ({
+        common: "常見",
+        uncommon: "普通",
+        rare: "稀有",
+        epic: "史詩",
+        legendary: "傳說",
+        mythic: "神話"
+    })[rarity] ?? "未知";
 }
 
-@media (max-width: 600px) {
-    .workshop-item-card {
-        flex-wrap: wrap;
+class WorkshopUI {
+    constructor() {
+        this.initialized = false;
     }
 
-    .workshop-item-info {
-        flex-basis: calc(100% - 70px);
+    init() {
+        if (this.initialized) return;
+
+        this.initialized = true;
+
+        document.addEventListener("click", event => {
+            const button = event.target.closest("[data-workshop-action]");
+
+            if (!button) return;
+
+            this.handleAction(button);
+        });
+
+        eventBus.on("workshop:changed", () => this.renderAll());
+        eventBus.on("inventory:changed", () => this.renderAll());
+        eventBus.on("gold:changed", () => this.renderAll());
+
+        eventBus.on("achievement:unlocked", achievement => {
+            this.showMessage(
+                `達成成就：${achievement.name}，獲得 ${formatGold(achievement.reward)}！`
+            );
+        });
+
+        document.addEventListener("workshop:page-opened", () => {
+            this.renderAll();
+        });
+
+        this.renderAll();
     }
 
-    .workshop-item-card > .workshop-button {
-        width: 100%;
+    renderAll() {
+        this.renderPlayer();
+        this.renderDex();
+        this.renderMarket();
+        this.renderProcessing();
+        this.renderMuseum();
+        this.renderCat();
+        this.renderAchievements();
     }
 
-    .workshop-recipe-list {
-        grid-template-columns: 1fr;
+    // =====================================
+    // 通用提示
+    // =====================================
+
+    showMessage(message, type = "success") {
+        const element = getElement("workshop-message");
+
+        if (!element) {
+            console.log(message);
+            return;
+        }
+
+        element.textContent = message;
+        element.className = `workshop-message ${type}`;
+        element.hidden = false;
     }
 
-    .workshop-cat-stats {
-        gap: 5px;
+    // =====================================
+    // 玩家等級
+    // =====================================
+
+    renderPlayer() {
+        const progress = workshopProgression.getLevelProgress();
+
+        const level = getElement("workshop-player-level");
+        const exp = getElement("workshop-player-exp");
+        const bar = getElement("workshop-exp-bar");
+        const total = getElement("workshop-total-exp");
+
+        if (level) {
+            level.textContent = `Lv. ${progress.level}`;
+        }
+
+        if (exp) {
+            exp.textContent =
+                `${progress.exp} / ${progress.required} EXP`;
+        }
+
+        if (bar) {
+            const percent = Math.min(
+                100,
+                progress.exp / progress.required * 100
+            );
+
+            bar.style.width = `${percent}%`;
+        }
+
+        if (total) {
+            total.textContent =
+                progress.totalExp.toLocaleString();
+        }
     }
 
-    .workshop-cat-stats span {
-        font-size: 10px;
+    // =====================================
+    // 玉石圖鑑
+    // =====================================
+
+    renderDex() {
+        const container = getElement("workshop-dex-list");
+        const count = getElement("workshop-dex-count");
+
+        if (!container) return;
+
+        const entries = workshopProgression.getDex();
+
+        if (count) {
+            count.textContent = `${entries.length} 種已發現`;
+        }
+
+        if (entries.length === 0) {
+            container.innerHTML = `
+                <div class="workshop-empty">
+                    <span>◇</span>
+                    <strong>圖鑑尚無紀錄</strong>
+                    <p>切開原石，尋找你的第一種玉石。</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = entries.map(entry => `
+            <article class="workshop-item-card">
+                <div class="workshop-item-icon">◇</div>
+                <div class="workshop-item-info">
+                    <strong>${escapeHTML(entry.name)}</strong>
+                    <span>${escapeHTML(rarityName(entry.rarity))}</span>
+                    <small>
+                        發現時間：
+                        ${new Date(entry.discoveredAt).toLocaleDateString("zh-TW")}
+                    </small>
+                </div>
+                <span class="workshop-discovered">已發現</span>
+            </article>
+        `).join("");
     }
 
-    .workshop-cat-stats strong {
-        font-size: 17px;
+    // =====================================
+    // 交易市場
+    // =====================================
+
+    renderMarket() {
+        const container = getElement("workshop-market-list");
+        const eventName = getElement("workshop-market-event");
+        const eventDescription = getElement("workshop-market-description");
+
+        if (!container) return;
+
+        const data = saveManager.getData();
+        const event = workshopProgression.getDailyEvent();
+
+        if (eventName) {
+            eventName.textContent = event.name;
+        }
+
+        if (eventDescription) {
+            eventDescription.textContent = event.description;
+        }
+
+        const jadeRows = [];
+
+        for (const stone of data.inventory ?? []) {
+            const masses = stone?.jadeData?.masses ?? [];
+
+            for (const mass of masses) {
+                jadeRows.push({
+                    stoneId: stone.id,
+                    mass,
+                    value: workshopProgression.getJadeValue(mass)
+                });
+            }
+        }
+
+        const productRows = (data.products ?? []).map(product => ({
+            product,
+            value: product.value
+        }));
+
+        if (jadeRows.length === 0 && productRows.length === 0) {
+            container.innerHTML = `
+                <div class="workshop-empty">
+                    <span>⌂</span>
+                    <strong>目前沒有可出售的商品</strong>
+                    <p>先去切割原石，或製作玉石飾品吧。</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            ${jadeRows.map(row => `
+                <article class="workshop-item-card">
+                    <div class="workshop-item-icon">◇</div>
+                    <div class="workshop-item-info">
+                        <strong>${escapeHTML(row.mass.name)}</strong>
+                        <span>${escapeHTML(rarityName(row.mass.rarity))}</span>
+                        <small>估價：${formatGold(row.value)}</small>
+                    </div>
+                    <button
+                        class="workshop-button"
+                        data-workshop-action="sell-jade"
+                        data-stone-id="${escapeHTML(row.stoneId)}"
+                        data-mass-id="${escapeHTML(row.mass.id)}">
+                        出售
+                    </button>
+                </article>
+            `).join("")}
+
+            ${productRows.map(row => `
+                <article class="workshop-item-card">
+                    <div class="workshop-item-icon">✧</div>
+                    <div class="workshop-item-info">
+                        <strong>${escapeHTML(row.product.name)}</strong>
+                        <span>加工成品・品質 ${row.product.quality}</span>
+                        <small>估價：${formatGold(row.value)}</small>
+                    </div>
+                    <button
+                        class="workshop-button"
+                        data-workshop-action="sell-product"
+                        data-product-id="${escapeHTML(row.product.id)}">
+                        出售
+                    </button>
+                </article>
+            `).join("")}
+        `;
     }
 
-    .workshop-level-footer {
-        align-items: flex-start;
-        flex-direction: column;
+    // =====================================
+    // 玉石加工
+    // =====================================
+
+    renderProcessing() {
+        const container = getElement("workshop-processing-list");
+
+        if (!container) return;
+
+        const inventory = saveManager.getData().inventory ?? [];
+        const rows = [];
+
+        for (const stone of inventory) {
+            for (const mass of stone?.jadeData?.masses ?? []) {
+                rows.push({ stone, mass });
+            }
+        }
+
+        if (rows.length === 0) {
+            container.innerHTML = `
+                <div class="workshop-empty">
+                    <span>⚒</span>
+                    <strong>目前沒有可加工的玉石</strong>
+                    <p>切開原石後，找到玉肉便能開始加工。</p>
+                </div>
+            `;
+            return;
+        }
+
+        const recipes = [
+            ["pendant", "玉石吊墜", 300],
+            ["ring", "玉石戒指", 450],
+            ["earrings", "玉石耳環", 500],
+            ["bracelet", "玉石手鐲", 1000]
+        ];
+
+        container.innerHTML = rows.map(({ stone, mass }) => `
+            <article class="workshop-processing-card">
+                <div class="workshop-processing-heading">
+                    <div>
+                        <strong>${escapeHTML(mass.name)}</strong>
+                        <span>${escapeHTML(rarityName(mass.rarity))}</span>
+                    </div>
+                    <strong>
+                        ${formatGold(workshopProgression.getJadeValue(mass))}
+                    </strong>
+                </div>
+
+                <p>選擇想製作的成品：</p>
+
+                <div class="workshop-recipe-list">
+                    ${recipes.map(([type, name, cost]) => `
+                        <button
+                            class="workshop-recipe-button"
+                            data-workshop-action="craft"
+                            data-stone-id="${escapeHTML(stone.id)}"
+                            data-mass-id="${escapeHTML(mass.id)}"
+                            data-product-type="${type}">
+                            ${name}
+                            <small>${formatGold(cost)}</small>
+                        </button>
+                    `).join("")}
+                </div>
+            </article>
+        `).join("");
+    }
+
+    // =====================================
+    // 博物館
+    // =====================================
+
+    renderMuseum() {
+        const container = getElement("workshop-museum-list");
+        const count = getElement("workshop-museum-count");
+
+        if (!container) return;
+
+        const data = saveManager.getData();
+
+        const exhibits = (data.products ?? []).filter(
+            product => product.museum
+        );
+
+        if (count) {
+            count.textContent = `${exhibits.length} 件展品`;
+        }
+
+        if (exhibits.length === 0) {
+            container.innerHTML = `
+                <div class="workshop-empty">
+                    <span>▤</span>
+                    <strong>博物館目前尚未開放展覽</strong>
+                    <p>製作第一件玉石飾品，將它放進你的私人收藏館。</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = exhibits.map(product => `
+            <article class="workshop-item-card">
+                <div class="workshop-item-icon">✧</div>
+                <div class="workshop-item-info">
+                    <strong>${escapeHTML(product.name)}</strong>
+                    <span>${escapeHTML(rarityName(product.rarity))}</span>
+                    <small>收藏價值：${formatGold(product.value)}</small>
+                </div>
+                <button
+                    class="workshop-button secondary"
+                    data-workshop-action="remove-exhibit"
+                    data-product-id="${escapeHTML(product.id)}">
+                    收回
+                </button>
+            </article>
+        `).join("");
+    }
+
+    // =====================================
+    // 小黑貓
+    // =====================================
+
+    renderCat() {
+        const data = saveManager.getData();
+        const cat = data.cat ?? {};
+
+        const now = new Date();
+
+        const today = [
+            now.getFullYear(),
+            String(now.getMonth() + 1).padStart(2, "0"),
+            String(now.getDate()).padStart(2, "0")
+        ].join("-");
+
+        const affection = getElement("workshop-cat-affection");
+        const normalCount = getElement("workshop-cat-normal-count");
+        const premiumCount = getElement("workshop-cat-premium-count");
+
+        if (affection) {
+            affection.textContent = cat.affection ?? 0;
+        }
+
+        if (normalCount) {
+            normalCount.textContent = cat.normalFeedCount ?? 0;
+        }
+
+        if (premiumCount) {
+            premiumCount.textContent = cat.premiumGiftCount ?? 0;
+        }
+
+        const normalButton = getElement("workshop-cat-normal");
+        const premiumButton = getElement("workshop-cat-premium");
+
+        if (normalButton) {
+            normalButton.disabled =
+                cat.lastNormalFeed === today;
+        }
+
+        if (premiumButton) {
+            premiumButton.disabled =
+                cat.lastPremiumGift === today;
+        }
+    }
+
+    // =====================================
+    // 成就
+    // =====================================
+
+    renderAchievements() {
+        const container = getElement("workshop-achievement-list");
+
+        if (!container) return;
+
+        const achievements =
+            workshopProgression.getAchievements();
+
+        container.innerHTML = achievements.map(item => `
+            <article class="workshop-achievement-card ${item.unlocked ? "unlocked" : ""}">
+                <div class="workshop-achievement-icon">
+                    ${item.unlocked ? "✦" : "◇"}
+                </div>
+                <div class="workshop-item-info">
+                    <strong>${escapeHTML(item.name)}</strong>
+                    <span>${escapeHTML(item.description)}</span>
+                    <small>獎勵：${formatGold(item.reward)}</small>
+                </div>
+                <span class="workshop-achievement-status">
+                    ${item.unlocked ? "已完成" : "未完成"}
+                </span>
+            </article>
+        `).join("");
+    }
+
+    // =====================================
+    // 按鈕事件
+    // =====================================
+
+    handleAction(button) {
+        const action = button.dataset.workshopAction;
+
+        let result;
+
+        if (action === "sell-jade") {
+            result = workshopProgression.sellJade(
+                button.dataset.stoneId,
+                button.dataset.massId
+            );
+        }
+
+        if (action === "sell-product") {
+            result = workshopProgression.sellProduct(
+                button.dataset.productId
+            );
+        }
+
+        if (action === "craft") {
+            result = workshopProgression.craftJade(
+                button.dataset.stoneId,
+                button.dataset.massId,
+                button.dataset.productType
+            );
+        }
+
+        if (action === "polish") {
+            result = workshopProgression.polishProduct(
+                button.dataset.productId
+            );
+        }
+
+        if (action === "exhibit") {
+            result = workshopProgression.exhibitProduct(
+                button.dataset.productId
+            );
+        }
+
+        if (action === "remove-exhibit") {
+            const success = workshopProgression.removeExhibit(
+                button.dataset.productId
+            );
+
+            result = {
+                success,
+                message: success
+                    ? "已將展品收回。"
+                    : "無法收回展品。"
+            };
+        }
+
+        if (action === "feed-normal") {
+            result = workshopProgression.feedCat("normal");
+        }
+
+        if (action === "feed-premium") {
+            result = workshopProgression.feedCat("premium");
+        }
+
+        if (!result) return;
+
+        this.showMessage(
+            result.message,
+            result.success ? "success" : "error"
+        );
+
+        if (result.wish) {
+            this.showMessage(
+                `${result.message} 願望：${result.wish.name}`,
+                "success"
+            );
+        }
+
+        this.renderAll();
     }
 }
+
+export const workshopUI = new WorkshopUI();
