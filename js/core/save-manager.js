@@ -55,6 +55,332 @@ const DEFAULT_SAVE = {
 };
 
 
+const COMPACT_GEOMETRY_KEY = "__compactGeometryV1";
+
+
+// =====================================
+// 二進位編碼工具
+// =====================================
+
+function bytesToBase64(bytes) {
+    let binary = "";
+    const chunkSize = 0x8000;
+
+    for (
+        let offset = 0;
+        offset < bytes.length;
+        offset += chunkSize
+    ) {
+        const chunk = bytes.subarray(
+            offset,
+            Math.min(offset + chunkSize, bytes.length)
+        );
+
+        binary += String.fromCharCode(...chunk);
+    }
+
+    return btoa(binary);
+}
+
+
+function base64ToBytes(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let index = 0; index < binary.length; index++) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+
+    return bytes;
+}
+
+
+function encodeTypedArray(typedArray) {
+    return bytesToBase64(
+        new Uint8Array(
+            typedArray.buffer,
+            typedArray.byteOffset,
+            typedArray.byteLength
+        )
+    );
+}
+
+
+function decodeFloat32(base64, expectedLength) {
+    const bytes = base64ToBytes(base64);
+
+    if (bytes.byteLength !== expectedLength * 4) {
+        throw new Error("玉石頂點壓縮資料長度不正確。");
+    }
+
+    const copy = bytes.slice();
+
+    return Array.from(
+        new Float32Array(copy.buffer)
+    );
+}
+
+
+function decodeIndices(base64, expectedLength, bytesPerIndex) {
+    const bytes = base64ToBytes(base64);
+
+    const expectedBytes =
+        expectedLength * bytesPerIndex;
+
+    if (bytes.byteLength !== expectedBytes) {
+        throw new Error("玉石面索引壓縮資料長度不正確。");
+    }
+
+    const copy = bytes.slice();
+
+    if (bytesPerIndex === 2) {
+        return Array.from(
+            new Uint16Array(copy.buffer)
+        );
+    }
+
+    if (bytesPerIndex === 4) {
+        return Array.from(
+            new Uint32Array(copy.buffer)
+        );
+    }
+
+    throw new Error("未知的玉石索引編碼格式。");
+}
+
+
+// =====================================
+// 幾何資料壓縮
+// =====================================
+
+function canCompactGeometry(value) {
+    if (
+        !value ||
+        typeof value !== "object" ||
+        !Array.isArray(value.vertices) ||
+        !Array.isArray(value.faces) ||
+        value.vertices.length < 4 ||
+        value.faces.length < 4
+    ) {
+        return false;
+    }
+
+    for (const vertex of value.vertices) {
+        if (
+            !Array.isArray(vertex) ||
+            vertex.length !== 3 ||
+            !vertex.every(Number.isFinite)
+        ) {
+            return false;
+        }
+    }
+
+    let maxIndex = 0;
+
+    for (const face of value.faces) {
+        if (
+            !Array.isArray(face) ||
+            face.length !== 3 ||
+            !face.every(index =>
+                Number.isInteger(index) &&
+                index >= 0 &&
+                index < value.vertices.length
+            )
+        ) {
+            return false;
+        }
+
+        maxIndex = Math.max(
+            maxIndex,
+            ...face
+        );
+    }
+
+    return maxIndex <= 0xFFFFFFFF;
+}
+
+
+function compactGeometry(geometry) {
+    const vertexValues = new Float32Array(
+        geometry.vertices.length * 3
+    );
+
+    let vertexOffset = 0;
+
+    for (const vertex of geometry.vertices) {
+        vertexValues[vertexOffset++] = vertex[0];
+        vertexValues[vertexOffset++] = vertex[1];
+        vertexValues[vertexOffset++] = vertex[2];
+    }
+
+    const maxIndex = geometry.vertices.length - 1;
+
+    const indexBytes = maxIndex <= 0xFFFF
+        ? 2
+        : 4;
+
+    const indexValues = indexBytes === 2
+        ? new Uint16Array(geometry.faces.length * 3)
+        : new Uint32Array(geometry.faces.length * 3);
+
+    let indexOffset = 0;
+
+    for (const face of geometry.faces) {
+        indexValues[indexOffset++] = face[0];
+        indexValues[indexOffset++] = face[1];
+        indexValues[indexOffset++] = face[2];
+    }
+
+    const result = {};
+
+    for (const [key, value] of Object.entries(geometry)) {
+        if (key !== "vertices" && key !== "faces") {
+            result[key] = packSaveData(value);
+        }
+    }
+
+    result[COMPACT_GEOMETRY_KEY] = {
+        version: 1,
+
+        vertexCount: geometry.vertices.length,
+        faceCount: geometry.faces.length,
+
+        indexBytes,
+
+        vertices: encodeTypedArray(vertexValues),
+        faces: encodeTypedArray(indexValues)
+    };
+
+    return result;
+}
+
+
+// =====================================
+// 幾何資料還原
+// =====================================
+
+function expandGeometry(geometry) {
+    const packed = geometry[COMPACT_GEOMETRY_KEY];
+
+    if (!packed || packed.version !== 1) {
+        throw new Error("不支援的玉石幾何壓縮版本。");
+    }
+
+    const vertexCount = packed.vertexCount;
+    const faceCount = packed.faceCount;
+
+    if (
+        !Number.isInteger(vertexCount) ||
+        !Number.isInteger(faceCount) ||
+        vertexCount < 4 ||
+        faceCount < 4
+    ) {
+        throw new Error("玉石幾何資料數量不正確。");
+    }
+
+    const flatVertices = decodeFloat32(
+        packed.vertices,
+        vertexCount * 3
+    );
+
+    const flatFaces = decodeIndices(
+        packed.faces,
+        faceCount * 3,
+        packed.indexBytes
+    );
+
+    const vertices = [];
+    const faces = [];
+
+    for (let index = 0; index < vertexCount; index++) {
+        const offset = index * 3;
+
+        vertices.push([
+            flatVertices[offset],
+            flatVertices[offset + 1],
+            flatVertices[offset + 2]
+        ]);
+    }
+
+    for (let index = 0; index < faceCount; index++) {
+        const offset = index * 3;
+
+        faces.push([
+            flatFaces[offset],
+            flatFaces[offset + 1],
+            flatFaces[offset + 2]
+        ]);
+    }
+
+    const result = {};
+
+    for (const [key, value] of Object.entries(geometry)) {
+        if (key !== COMPACT_GEOMETRY_KEY) {
+            result[key] = unpackSaveData(value);
+        }
+    }
+
+    result.vertices = vertices;
+    result.faces = faces;
+
+    return result;
+}
+
+
+// =====================================
+// 遞迴處理存檔
+// =====================================
+
+function packSaveData(value) {
+    if (Array.isArray(value)) {
+        return value.map(item => packSaveData(item));
+    }
+
+    if (!value || typeof value !== "object") {
+        return value;
+    }
+
+    if (value[COMPACT_GEOMETRY_KEY]) {
+        return value;
+    }
+
+    if (canCompactGeometry(value)) {
+        return compactGeometry(value);
+    }
+
+    const result = {};
+
+    for (const [key, child] of Object.entries(value)) {
+        result[key] = packSaveData(child);
+    }
+
+    return result;
+}
+
+
+function unpackSaveData(value) {
+    if (Array.isArray(value)) {
+        return value.map(item => unpackSaveData(item));
+    }
+
+    if (!value || typeof value !== "object") {
+        return value;
+    }
+
+    if (value[COMPACT_GEOMETRY_KEY]) {
+        return expandGeometry(value);
+    }
+
+    const result = {};
+
+    for (const [key, child] of Object.entries(value)) {
+        result[key] = unpackSaveData(child);
+    }
+
+    return result;
+}
+
+
 // =====================================
 // 存檔合併
 // =====================================
@@ -144,13 +470,10 @@ function repairMassGeometry(mass) {
         return false;
     }
 
-    // 已經有有效幾何資料，不重複生成。
     if (hasValidGeometry(mass.geometry)) {
         return false;
     }
 
-    // 已定位過的玉料不能直接重建。
-    // 否則可能遺失原本的切割位置與形狀。
     if (mass.placementApplied === true) {
         console.warn(
             "略過已定位但缺少幾何資料的玉料：",
@@ -216,8 +539,6 @@ function repairLegacyJadeGeometry(data) {
     }
 
     for (const stone of data.inventory) {
-        // 只處理尚未切割的原石。
-        // 已切割產物的幾何位置不能直接重建。
         if (stone.status !== "uncut") {
             continue;
         }
@@ -271,20 +592,9 @@ function repairLegacyJadeGeometry(data) {
             "========== 玉料幾何資料遷移 =========="
         );
 
-        console.log(
-            "成功補回：",
-            result.repaired
-        );
-
-        console.log(
-            "修復失敗：",
-            result.failed
-        );
-
-        console.log(
-            "略過資料：",
-            result.skipped
-        );
+        console.log("成功補回：", result.repaired);
+        console.log("修復失敗：", result.failed);
+        console.log("略過資料：", result.skipped);
 
         console.log(
             "===================================="
@@ -332,20 +642,20 @@ class SaveManager {
                 throw new Error("存檔格式錯誤");
             }
 
-            // 合併預設資料。
-            this.data = mergeSave(parsed);
+            // 自動辨識舊版與壓縮版存檔。
+            const expanded = unpackSaveData(parsed);
 
-            // 自動修復舊版原石缺少的玉料幾何資料。
-            const repairResult =
-                repairLegacyJadeGeometry(this.data);
+            this.data = mergeSave(expanded);
 
-            // 保存遷移結果。
+            repairLegacyJadeGeometry(this.data);
+
+            // 將舊版存檔轉成壓縮格式。
             const saved = this.save();
 
             if (!saved) {
                 console.error(
-                    "玉料幾何資料已在記憶體中補回，" +
-                    "但存檔寫入失敗。"
+                    "存檔格式轉換失敗，" +
+                    "目前資料仍保留在記憶體中。"
                 );
             }
 
@@ -357,8 +667,7 @@ class SaveManager {
                 error
             );
 
-            // 不要因為個別玉料幾何修復失敗，
-            // 就直接重置整份玩家存檔。
+            // 不因個別幾何資料錯誤而重置整份存檔。
             if (this.data?.inventory?.length > 0) {
                 return this.data;
             }
@@ -378,9 +687,15 @@ class SaveManager {
 
     save() {
         try {
+            // 幾何資料只在寫入時壓縮。
+            // 遊戲執行期間仍使用原本的陣列結構。
+            const compacted = packSaveData(this.data);
+
+            const serialized = JSON.stringify(compacted);
+
             localStorage.setItem(
                 GAME_CONFIG.saveKey,
-                JSON.stringify(this.data)
+                serialized
             );
 
             return true;
@@ -390,6 +705,13 @@ class SaveManager {
                 "儲存存檔失敗：",
                 error
             );
+
+            if (error?.name === "QuotaExceededError") {
+                console.error(
+                    "存檔仍超過瀏覽器儲存上限。" +
+                    "原始遊戲資料沒有被刪除。"
+                );
+            }
 
             return false;
         }
@@ -410,12 +732,19 @@ class SaveManager {
     // =================================
 
     update(patch) {
+        const previous = this.data;
+
         this.data = {
             ...this.data,
             ...patch
         };
 
-        return this.save();
+        if (!this.save()) {
+            this.data = previous;
+            return false;
+        }
+
+        return true;
     }
 
 
@@ -443,6 +772,7 @@ class SaveManager {
     // =================================
 
     exportBackup() {
+        // 備份仍使用完整、可讀取的原始資料格式。
         return JSON.stringify(
             this.data,
             null,
@@ -467,11 +797,13 @@ class SaveManager {
                 throw new Error("備份檔案格式錯誤");
             }
 
+            // 支援匯入一般 JSON 與壓縮版 JSON。
+            const expanded = unpackSaveData(parsed);
+
             const previous = this.data;
 
-            this.data = mergeSave(parsed);
+            this.data = mergeSave(expanded);
 
-            // 匯入舊版備份時也執行玉料幾何遷移。
             repairLegacyJadeGeometry(this.data);
 
             if (!this.save()) {
