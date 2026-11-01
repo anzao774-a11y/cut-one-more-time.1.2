@@ -1,6 +1,8 @@
 import { inventorySystem } from "../systems/inventory.js";
 import { eventBus } from "../core/event-bus.js";
 import { inventory3DPreview } from "./inventory-3d-preview.js";
+import { cuttingUI } from "./cutting-ui.js";
+import { saveManager } from "../core/save-manager.js";
 
 const RARITY_NAMES = {
     gypsy: "吉普賽",
@@ -235,6 +237,9 @@ class InventoryUI {
             return;
         }
 
+        // 舊版切割紀錄沒有保存玉料時，嘗試從來源原石補回。
+        this.recoverCutJadeData(stone);
+
         inventory3DPreview.destroy();
         this.resetPreviewReferences();
 
@@ -265,6 +270,54 @@ class InventoryUI {
             behavior: "smooth",
             block: "nearest"
         });
+    }
+
+    recoverCutJadeData(stone) {
+        if (
+            stone?.status !== "cut" ||
+            stone.jadeData ||
+            !stone.sourceStoneId ||
+            !stone.cutData?.cutPlane
+        ) {
+            return false;
+        }
+
+        const sourceStone = inventorySystem.getById(
+            stone.sourceStoneId
+        );
+
+        if (
+            !sourceStone?.geometry ||
+            !sourceStone?.jadeData
+        ) {
+            return false;
+        }
+
+        try {
+            const split = cuttingUI.splitJadeData(
+                sourceStone,
+                {
+                    cutPlane: stone.cutData.cutPlane,
+                    bladeThickness:
+                        Number(stone.cutData.bladeThickness) || 0.025
+                }
+            );
+
+            const recovered = split[stone.cutSide];
+
+            if (!recovered) {
+                return false;
+            }
+
+            stone.jadeData = recovered;
+            saveManager.save();
+
+            return true;
+
+        } catch (error) {
+            console.warn("舊切割紀錄的玉料資料補回失敗：", error);
+            return false;
+        }
     }
 
     resetPreviewReferences() {
